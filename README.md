@@ -1,7 +1,7 @@
 
-  # Authentication and Organization Management
+  # GIg Manager
 
-  This is a code bundle for Authentication and Organization Management. The original project is available at https://www.figma.com/design/Kujdbw7w9IEPUUlH1GCIaE/Authentication-and-Organization-Management.
+  This is a code bundle for GIg Manager. The original project is available at https://www.figma.com/design/Kujdbw7w9IEPUUlH1GCIaE/GIg-Manager.
 
   ## Running the code
 
