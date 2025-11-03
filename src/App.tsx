@@ -3,6 +3,9 @@ import LoginScreen from './components/LoginScreen';
 import OrganizationSelectionScreen from './components/OrganizationSelectionScreen';
 import CreateOrganizationScreen from './components/CreateOrganizationScreen';
 import Dashboard from './components/Dashboard';
+import GigListScreen from './components/GigListScreen';
+import CreateGigScreen from './components/CreateGigScreen';
+import GigDetailScreen from './components/GigDetailScreen';
 import { Toaster } from './components/ui/sonner';
 
 export type OrganizationType = 
@@ -45,13 +48,21 @@ export interface User {
   avatar_url?: string;
 }
 
-type Route = 'login' | 'org-selection' | 'create-org' | 'dashboard';
+type Route = 
+  | 'login' 
+  | 'org-selection' 
+  | 'create-org' 
+  | 'dashboard' 
+  | 'gig-list'
+  | 'create-gig'
+  | 'gig-detail';
 
 function App() {
   const [currentRoute, setCurrentRoute] = useState<Route>('login');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
   const [userOrganizations, setUserOrganizations] = useState<OrganizationMembership[]>([]);
+  const [selectedGigId, setSelectedGigId] = useState<string | null>(null);
 
   const handleLogin = (user: User, organizations: OrganizationMembership[]) => {
     setCurrentUser(user);
@@ -86,7 +97,34 @@ function App() {
     setCurrentUser(null);
     setSelectedOrganization(null);
     setUserOrganizations([]);
+    setSelectedGigId(null);
     setCurrentRoute('login');
+  };
+
+  const handleNavigateToGigs = () => {
+    setCurrentRoute('gig-list');
+  };
+
+  const handleCreateGig = () => {
+    setCurrentRoute('create-gig');
+  };
+
+  const handleViewGig = (gigId: string) => {
+    setSelectedGigId(gigId);
+    setCurrentRoute('gig-detail');
+  };
+
+  const handleGigCreated = (gigId: string) => {
+    setSelectedGigId(gigId);
+    setCurrentRoute('gig-detail');
+  };
+
+  const handleBackToDashboard = () => {
+    setCurrentRoute('dashboard');
+  };
+
+  const handleBackToGigList = () => {
+    setCurrentRoute('gig-list');
   };
 
   return (
@@ -117,6 +155,35 @@ function App() {
           user={currentUser}
           onBackToSelection={handleBackToSelection}
           onLogout={handleLogout}
+          onNavigateToGigs={handleNavigateToGigs}
+        />
+      )}
+
+      {currentRoute === 'gig-list' && selectedOrganization && currentUser && (
+        <GigListScreen
+          organization={selectedOrganization}
+          user={currentUser}
+          onBack={handleBackToDashboard}
+          onCreateGig={handleCreateGig}
+          onViewGig={handleViewGig}
+        />
+      )}
+
+      {currentRoute === 'create-gig' && selectedOrganization && currentUser && (
+        <CreateGigScreen
+          organization={selectedOrganization}
+          user={currentUser}
+          onCancel={handleBackToGigList}
+          onGigCreated={handleGigCreated}
+        />
+      )}
+
+      {currentRoute === 'gig-detail' && selectedOrganization && currentUser && selectedGigId && (
+        <GigDetailScreen
+          gigId={selectedGigId}
+          organization={selectedOrganization}
+          user={currentUser}
+          onBack={handleBackToGigList}
         />
       )}
       

@@ -27,13 +27,15 @@ interface DashboardProps {
   user: User;
   onBackToSelection: () => void;
   onLogout: () => void;
+  onNavigateToGigs?: () => void;
 }
 
 export default function Dashboard({
   organization,
   user,
   onBackToSelection,
-  onLogout
+  onLogout,
+  onNavigateToGigs
 }: DashboardProps) {
   const getInitials = (firstName: string, lastName: string) => {
     return `${firstName[0]}${lastName[0]}`.toUpperCase();
@@ -44,7 +46,8 @@ export default function Dashboard({
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          {/* Top Bar */}
+          <div className="flex items-center justify-between h-16 border-b border-gray-100">
             <div className="flex items-center gap-4">
               <div className="inline-flex items-center justify-center w-10 h-10 bg-sky-500 rounded-lg">
                 <Building2 className="w-6 h-6 text-white" />
@@ -102,6 +105,29 @@ export default function Dashboard({
               </DropdownMenu>
             </div>
           </div>
+
+          {/* Navigation Bar */}
+          <nav className="flex items-center gap-1 h-12">
+            <button className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2">
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard
+            </button>
+            <button 
+              onClick={onNavigateToGigs}
+              className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Calendar className="w-4 h-4" />
+              Events
+            </button>
+            <button className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Team
+            </button>
+            <button className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              Equipment
+            </button>
+          </nav>
         </div>
       </div>
 
@@ -115,7 +141,10 @@ export default function Dashboard({
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Card className="p-4">
+          <Card 
+            className="p-4 cursor-pointer hover:shadow-lg transition-shadow"
+            onClick={onNavigateToGigs}
+          >
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm text-gray-600">Events</p>
               <Calendar className="w-5 h-5 text-sky-500" />
@@ -188,7 +217,17 @@ export default function Dashboard({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Upcoming Events */}
           <Card className="lg:col-span-2 p-6">
-            <h3 className="text-gray-900 mb-4">Upcoming Events</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-gray-900">Upcoming Events</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onNavigateToGigs}
+                className="text-sky-600 hover:text-sky-700 hover:bg-sky-50 border-sky-200"
+              >
+                Manage Events
+              </Button>
+            </div>
             <div className="space-y-4">
               {[
                 { name: 'Summer Music Festival', date: 'Nov 15, 2025', status: 'Confirmed' },
