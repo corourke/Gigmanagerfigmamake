@@ -1,89 +1,256 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { Alert, AlertDescription } from './ui/alert';
-import { Building2, AlertCircle, Loader2 } from 'lucide-react';
+import { Separator } from './ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Building2, AlertCircle, Loader2, Mail, Lock } from 'lucide-react';
+import { createClient } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 import type { User, OrganizationMembership } from '../App';
-
-// Mock data for demonstration
-const MOCK_USER: User = {
-  id: '1',
-  email: 'john.doe@example.com',
-  first_name: 'John',
-  last_name: 'Doe',
-  avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=John'
-};
-
-const MOCK_ORGANIZATIONS: OrganizationMembership[] = [
-  {
-    organization: {
-      id: '1',
-      name: 'Soundwave Productions',
-      type: 'ProductionCompany',
-      url: 'https://soundwaveprod.com',
-      city: 'Los Angeles',
-      state: 'CA',
-      country: 'USA',
-      created_at: '2024-01-15T10:00:00Z',
-      updated_at: '2024-01-15T10:00:00Z'
-    },
-    role: 'Admin'
-  },
-  {
-    organization: {
-      id: '2',
-      name: 'Lumina Lighting Co.',
-      type: 'SoundLightingCompany',
-      url: 'https://luminalighting.com',
-      city: 'Nashville',
-      state: 'TN',
-      country: 'USA',
-      created_at: '2024-02-20T10:00:00Z',
-      updated_at: '2024-02-20T10:00:00Z'
-    },
-    role: 'Manager'
-  },
-  {
-    organization: {
-      id: '3',
-      name: 'The Roxy Theater',
-      type: 'Venue',
-      address_line1: '9009 Sunset Blvd',
-      city: 'West Hollywood',
-      state: 'CA',
-      postal_code: '90069',
-      country: 'USA',
-      created_at: '2024-03-10T10:00:00Z',
-      updated_at: '2024-03-10T10:00:00Z'
-    },
-    role: 'Staff'
-  }
-];
+import { MOCK_USER, MOCK_ORGANIZATIONS } from '../utils/mock-data';
 
 interface LoginScreenProps {
   onLogin: (user: User, organizations: OrganizationMembership[]) => void;
+  useMockData?: boolean;
 }
 
-export default function LoginScreen({ onLogin }: LoginScreenProps) {
+export default function LoginScreen({ onLogin, useMockData = false }: LoginScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  
+  // Email/Password form state
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  
+  const supabase = createClient();
+
+  // Check for existing session on mount
+  useEffect(() => {
+    checkExistingSession();
+  }, []);
+
+  const checkExistingSession = async () => {
+    if (useMockData) return;
+
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error('Session check error:', sessionError);
+        return;
+      }
+
+      if (session?.user) {
+        // User has active session, fetch their data
+        await handleAuthenticatedUser(session.access_token, session.user.id);
+      }
+    } catch (err) {
+      console.error('Error checking session:', err);
+    }
+  };
+
+  const handleAuthenticatedUser = async (accessToken: string, userId: string) => {
+    try {
+      const supabaseUrl = `https://${projectId}.supabase.co`;
+
+      // Fetch or create user profile
+      const userResponse = await fetch(`${supabaseUrl}/functions/v1/make-server-de012ad4/users/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      let userData;
+      if (userResponse.status === 400 || userResponse.status === 404) {
+        // User doesn't exist, create profile
+        const createResponse = await fetch(`${supabaseUrl}/functions/v1/make-server-de012ad4/users`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            first_name: firstName || 'User',
+            last_name: lastName || '',
+          }),
+        });
+        
+        if (!createResponse.ok) {
+          const errorData = await createResponse.json();
+          throw new Error(errorData.error || 'Failed to create user profile');
+        }
+        
+        userData = await createResponse.json();
+      } else if (!userResponse.ok) {
+        const errorData = await userResponse.json();
+        throw new Error(errorData.error || 'Failed to fetch user profile');
+      } else {
+        userData = await userResponse.json();
+      }
+
+      // Fetch user's organizations
+      const orgsResponse = await fetch(
+        `${supabaseUrl}/functions/v1/make-server-de012ad4/users/${userId}/organizations`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (!orgsResponse.ok) {
+        const errorData = await orgsResponse.json();
+        throw new Error(errorData.error || 'Failed to fetch organizations');
+      }
+
+      const orgsData = await orgsResponse.json();
+
+      // Transform to app format
+      const user: User = {
+        id: userData.id,
+        email: userData.email,
+        first_name: userData.first_name || '',
+        last_name: userData.last_name || '',
+        avatar_url: userData.avatar_url,
+      };
+
+      const organizations: OrganizationMembership[] = orgsData.map((membership: any) => ({
+        organization: membership.organization,
+        role: membership.role,
+      }));
+
+      // Call onLogin callback
+      onLogin(user, organizations);
+    } catch (err: any) {
+      console.error('Error handling authenticated user:', err);
+      setError(err.message || 'Failed to load user data');
+      setIsLoading(false);
+    }
+  };
+
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+
+    // Use mock data if requested
+    if (useMockData) {
+      setTimeout(() => {
+        onLogin(MOCK_USER, MOCK_ORGANIZATIONS);
+        setIsLoading(false);
+      }, 1500);
+      return;
+    }
+
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) {
+        console.error('Sign in error:', authError);
+        setError(authError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      if (data.session) {
+        await handleAuthenticatedUser(data.session.access_token, data.session.user.id);
+      }
+    } catch (err: any) {
+      console.error('Error during email sign in:', err);
+      setError(err.message || 'Sign in failed. Please try again.');
+      setIsLoading(false);
+    }
+  };
+
+  const handleEmailSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+
+    if (!firstName || !lastName) {
+      setError('Please provide your first and last name');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Sign up the user
+      const { data, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+          },
+        },
+      });
+
+      if (authError) {
+        console.error('Sign up error:', authError);
+        setError(authError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      if (data.session) {
+        // User is automatically signed in
+        await handleAuthenticatedUser(data.session.access_token, data.session.user.id);
+      } else if (data.user && !data.session) {
+        // Email confirmation required
+        setError('Please check your email to confirm your account before signing in.');
+        setIsLoading(false);
+        setAuthMode('signin');
+      }
+    } catch (err: any) {
+      console.error('Error during email sign up:', err);
+      setError(err.message || 'Sign up failed. Please try again.');
+      setIsLoading(false);
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError(null);
 
-    // Simulate OAuth flow
-    setTimeout(() => {
-      // Simulate random error (10% chance)
-      if (Math.random() < 0.1) {
-        setError('Authentication failed. Please try again.');
+    // Use mock data if requested
+    if (useMockData) {
+      setTimeout(() => {
+        onLogin(MOCK_USER, MOCK_ORGANIZATIONS);
+        setIsLoading(false);
+      }, 1500);
+      return;
+    }
+
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+
+      if (authError) {
+        console.error('OAuth error:', authError);
+        setError('Google authentication failed. Please try again.');
         setIsLoading(false);
         return;
       }
 
-      // Success - call onLogin with mock data
-      onLogin(MOCK_USER, MOCK_ORGANIZATIONS);
+      // The redirect will happen automatically
+    } catch (err: any) {
+      console.error('Error during Google login:', err);
+      setError(err.message || 'Authentication failed. Please try again.');
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -100,21 +267,171 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
         {/* Login Card */}
         <div className="bg-white rounded-xl shadow-lg p-8">
-          <h2 className="text-gray-900 mb-6 text-center">Sign in to your account</h2>
+          <Tabs value={authMode} onValueChange={(v) => setAuthMode(v as 'signin' | 'signup')} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="signin">Sign In</TabsTrigger>
+              <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            </TabsList>
 
-          {/* Error Alert */}
-          {error && (
-            <Alert variant="destructive" className="mb-6">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+            {/* Error Alert */}
+            {error && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {/* Sign In Tab */}
+            <TabsContent value="signin">
+              <form onSubmit={handleEmailSignIn} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signin-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signin-email"
+                      type="email"
+                      placeholder="your.email@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-10"
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signin-password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signin-password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10"
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full h-11 bg-sky-500 hover:bg-sky-600"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    'Sign in with Email'
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+
+            {/* Sign Up Tab */}
+            <TabsContent value="signup">
+              <form onSubmit={handleEmailSignUp} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-firstname">First Name</Label>
+                    <Input
+                      id="signup-firstname"
+                      type="text"
+                      placeholder="John"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-lastname">Last Name</Label>
+                    <Input
+                      id="signup-lastname"
+                      type="text"
+                      placeholder="Doe"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signup-email"
+                      type="email"
+                      placeholder="your.email@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-10"
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signup-password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10"
+                      required
+                      minLength={6}
+                      disabled={isLoading}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">Minimum 6 characters</p>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full h-11 bg-sky-500 hover:bg-sky-600"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating account...
+                    </>
+                  ) : (
+                    'Create Account'
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
+
+          {/* Divider */}
+          <div className="relative my-6">
+            <Separator />
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-xs text-gray-500">
+              OR
+            </span>
+          </div>
 
           {/* Google OAuth Button */}
           <Button
             onClick={handleGoogleLogin}
             disabled={isLoading}
-            className="w-full h-12 bg-white hover:bg-gray-50 text-gray-900 border-2 border-gray-300 hover:border-gray-400"
+            className="w-full h-11 bg-white hover:bg-gray-50 text-gray-900 border-2 border-gray-300 hover:border-gray-400"
             variant="outline"
           >
             {isLoading ? (
@@ -142,7 +459,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                   />
                 </svg>
-                Sign in with Google
+                Continue with Google
               </>
             )}
           </Button>
@@ -150,7 +467,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           {/* Additional Info */}
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">
-              Secure authentication powered by Google OAuth
+              {useMockData ? 'Using mock data for demonstration' : 'Secure authentication powered by Supabase'}
             </p>
           </div>
         </div>

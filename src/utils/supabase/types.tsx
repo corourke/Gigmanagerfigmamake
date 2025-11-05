@@ -1,0 +1,175 @@
+// Database types for Supabase tables
+
+export type OrganizationType = 
+  | 'Production'
+  | 'Sound'
+  | 'Lighting'
+  | 'Staging'
+  | 'Rentals'
+  | 'Venue'
+  | 'Act'
+  | 'Agency';
+
+export type UserRole = 'Admin' | 'Manager' | 'Staff' | 'Viewer';
+
+export type GigStatus = 'DateHold' | 'Proposed' | 'Booked' | 'Completed' | 'Cancelled' | 'Settled';
+
+// Database row types
+export interface DbUser {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone?: string;
+  avatar_url?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  role_hint?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbOrganization {
+  id: string;
+  name: string;
+  type: OrganizationType;
+  url?: string;
+  phone_number?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  description?: string;
+  allowed_domains?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbOrganizationMember {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  role: UserRole;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbGig {
+  id: string;
+  organization_id: string;
+  title: string;
+  status: GigStatus;
+  tags: string[];
+  start: string; // ISO DateTime
+  end: string; // ISO DateTime
+  timezone: string;
+  amount_paid?: number;
+  notes?: string;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbStaffRole {
+  id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbGigStatusHistory {
+  id: string;
+  gig_id: string;
+  from_status?: GigStatus;
+  to_status: GigStatus;
+  changed_by: string;
+  changed_at: string;
+}
+
+export interface DbGigParticipant {
+  id: string;
+  gig_id: string;
+  organization_id: string;
+  role: OrganizationType;
+  notes?: string;
+}
+
+export interface DbGigStaffSlot {
+  id: string;
+  gig_id: string;
+  staff_role_id: string;
+  required_count: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbGigStaffAssignment {
+  id: string;
+  slot_id: string;
+  user_id: string;
+  status: string;
+  rate?: number;
+  fee?: number;
+  notes?: string;
+  assigned_at: string;
+  confirmed_at?: string;
+}
+
+export interface DbGigBid {
+  id: string;
+  gig_id: string;
+  amount: number;
+  date_given: string; // Date
+  result?: string;
+  notes?: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface DbOrgAnnotation {
+  id: string;
+  organization_id: string;
+  target_org_id: string;
+  notes?: string;
+  tags: string[];
+  created_by: string;
+  created_at: string;
+}
+
+export interface DbAsset {
+  id: string;
+  organization_id: string;
+  acquisition_date: string; // Date
+  vendor?: string;
+  cost?: number;
+  category: string;
+  sub_category?: string;
+  insurance_policy_added: boolean;
+  manufacturer_model: string;
+  type?: string;
+  serial_number?: string;
+  description?: string;
+  replacement_value?: number;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Joined query types
+export interface GigWithParticipants extends DbGig {
+  participants?: (DbGigParticipant & { organization?: DbOrganization })[];
+}
+
+export interface OrganizationMembershipWithOrg extends DbOrganizationMember {
+  organization: DbOrganization;
+}

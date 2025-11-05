@@ -3,6 +3,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Card } from './ui/card';
+import { createClient } from '../utils/supabase/client';
+import * as api from '../utils/api';
 import {
   Select,
   SelectContent,
@@ -57,24 +59,26 @@ import { format, parse } from 'date-fns';
 import { toast } from 'sonner@2.0.3';
 import type { Organization, User } from '../App';
 
-export type GigStatus = 'Hold Date' | 'Proposed' | 'Booked' | 'Completed' | 'Cancelled' | 'Paid';
+export type GigStatus = 'DateHold' | 'Proposed' | 'Booked' | 'Completed' | 'Cancelled' | 'Settled';
 
 export interface Gig {
   id: string;
+  organization_id?: string;
   title: string;
-  date: string; // ISO date string
-  start_time: string; // HH:MM format
-  end_time: string; // HH:MM format
+  start: string; // ISO DateTime string
+  end: string; // ISO DateTime string
   timezone: string;
   status: GigStatus;
   tags: string[];
   notes?: string;
   amount_paid?: number;
-  venue?: Organization;
-  act?: Organization;
-  primary_contact_user_id?: string;
+  // Participants (from gig_participants table)
+  venue?: Organization; // Organization with role 'Venue'
+  act?: Organization; // Organization with role 'Act'
   created_at: string;
   updated_at: string;
+  created_by?: string;
+  updated_by?: string;
 }
 
 interface GigListScreenProps {
@@ -83,6 +87,7 @@ interface GigListScreenProps {
   onBack: () => void;
   onCreateGig: () => void;
   onViewGig: (gigId: string) => void;
+  useMockData?: boolean;
 }
 
 type EditingCell = {
@@ -128,9 +133,8 @@ const MOCK_GIGS_DATA: Gig[] = [
   {
     id: '1',
     title: 'Summer Music Festival 2025',
-    date: '2025-07-15',
-    start_time: '14:00',
-    end_time: '23:00',
+    start: '2025-07-15T14:00:00',
+    end: '2025-07-15T23:00:00',
     timezone: 'America/Los_Angeles',
     status: 'Booked',
     tags: ['Festival', 'Outdoor', 'Multi-Day'],
@@ -143,9 +147,8 @@ const MOCK_GIGS_DATA: Gig[] = [
   {
     id: '2',
     title: 'Corporate Holiday Gala',
-    date: '2025-12-18',
-    start_time: '18:00',
-    end_time: '22:00',
+    start: '2025-12-18T18:00:00',
+    end: '2025-12-18T22:00:00',
     timezone: 'America/New_York',
     status: 'Proposed',
     tags: ['Corporate Event', 'Holiday'],
@@ -156,9 +159,8 @@ const MOCK_GIGS_DATA: Gig[] = [
   {
     id: '3',
     title: 'Spring Wedding Reception',
-    date: '2025-05-10',
-    start_time: '17:00',
-    end_time: '01:00',
+    start: '2025-05-10T17:00:00',
+    end: '2025-05-11T01:00:00', // Crosses midnight
     timezone: 'America/Chicago',
     status: 'Booked',
     tags: ['Wedding', 'Private Event'],
@@ -170,11 +172,10 @@ const MOCK_GIGS_DATA: Gig[] = [
   {
     id: '4',
     title: 'Tech Conference 2025',
-    date: '2025-11-05',
-    start_time: '08:00',
-    end_time: '18:00',
+    start: '2025-11-05T08:00:00',
+    end: '2025-11-05T18:00:00',
     timezone: 'America/Los_Angeles',
-    status: 'Hold Date',
+    status: 'DateHold',
     tags: ['Conference', 'Corporate Event'],
     created_at: '2025-01-25T16:00:00Z',
     updated_at: '2025-01-25T16:00:00Z',
@@ -182,9 +183,8 @@ const MOCK_GIGS_DATA: Gig[] = [
   {
     id: '5',
     title: 'Jazz Night at The Blue Note',
-    date: '2025-03-22',
-    start_time: '20:00',
-    end_time: '23:30',
+    start: '2025-03-22T20:00:00',
+    end: '2025-03-22T23:30:00',
     timezone: 'America/New_York',
     status: 'Completed',
     tags: ['Concert', 'Jazz'],
@@ -197,11 +197,10 @@ const MOCK_GIGS_DATA: Gig[] = [
   {
     id: '6',
     title: 'Charity Fundraiser Gala',
-    date: '2025-10-15',
-    start_time: '18:30',
-    end_time: '23:00',
+    start: '2025-10-15T18:30:00',
+    end: '2025-10-15T23:00:00',
     timezone: 'America/Chicago',
-    status: 'Paid',
+    status: 'Settled',
     tags: ['Charity', 'Gala', 'Formal'],
     amount_paid: 15000,
     venue: MOCK_VENUES[4],
@@ -211,9 +210,8 @@ const MOCK_GIGS_DATA: Gig[] = [
   {
     id: '7',
     title: 'Outdoor Concert Series - Week 1',
-    date: '2025-06-07',
-    start_time: '19:00',
-    end_time: '22:00',
+    start: '2025-06-07T19:00:00',
+    end: '2025-06-07T22:00:00',
     timezone: 'America/Denver',
     status: 'Booked',
     tags: ['Concert', 'Series', 'Outdoor'],
@@ -224,9 +222,8 @@ const MOCK_GIGS_DATA: Gig[] = [
   {
     id: '8',
     title: 'Theater Production - Opening Night',
-    date: '2025-04-12',
-    start_time: '19:30',
-    end_time: '22:00',
+    start: '2025-04-12T19:30:00',
+    end: '2025-04-12T22:00:00',
     timezone: 'America/New_York',
     status: 'Cancelled',
     tags: ['Theater', 'Live Performance'],
@@ -236,12 +233,12 @@ const MOCK_GIGS_DATA: Gig[] = [
 ];
 
 const STATUS_CONFIG: Record<GigStatus, { color: string; label: string }> = {
-  'Hold Date': { color: 'bg-gray-100 text-gray-700 border-gray-300', label: 'Hold Date' },
+  'DateHold': { color: 'bg-gray-100 text-gray-700 border-gray-300', label: 'Date Hold' },
   'Proposed': { color: 'bg-blue-100 text-blue-700 border-blue-300', label: 'Proposed' },
   'Booked': { color: 'bg-green-100 text-green-700 border-green-300', label: 'Booked' },
   'Completed': { color: 'bg-purple-100 text-purple-700 border-purple-300', label: 'Completed' },
   'Cancelled': { color: 'bg-red-100 text-red-700 border-red-300', label: 'Cancelled' },
-  'Paid': { color: 'bg-emerald-100 text-emerald-700 border-emerald-300', label: 'Paid' },
+  'Settled': { color: 'bg-emerald-100 text-emerald-700 border-emerald-300', label: 'Settled' },
 };
 
 const ALL_TAGS = ['Festival', 'Concert', 'Corporate Event', 'Wedding', 'Theater', 'Conference', 'Charity', 'Gala', 'Outdoor', 'Multi-Day', 'Series', 'Private Event', 'Jazz', 'Formal', 'Live Performance', 'Holiday'];
@@ -252,14 +249,17 @@ export default function GigListScreen({
   onBack,
   onCreateGig,
   onViewGig,
+  useMockData = false,
 }: GigListScreenProps) {
-  const [gigs, setGigs] = useState<Gig[]>(MOCK_GIGS_DATA);
+  const [gigs, setGigs] = useState<Gig[]>([]);
+  const [venues, setVenues] = useState<Organization[]>(MOCK_VENUES);
+  const [acts, setActs] = useState<Organization[]>(MOCK_ACTS);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<GigStatus | 'All'>('All');
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Inline editing state
   const [editingCell, setEditingCell] = useState<EditingCell>(null);
@@ -278,11 +278,96 @@ export default function GigListScreen({
   const [venueSearch, setVenueSearch] = useState('');
   const [actSearch, setActSearch] = useState('');
 
-  // Mock loading state on mount
-  useState(() => {
+  // Load initial data
+  useEffect(() => {
+    loadData();
+    
+    if (!useMockData) {
+      setupRealtimeSubscription();
+    }
+    
+    return () => {
+      // Cleanup subscription
+      if (!useMockData) {
+        const supabase = createClient();
+        supabase.channel('gigs').unsubscribe();
+      }
+    };
+  }, [organization.id, useMockData]);
+
+  const loadData = async () => {
     setIsLoading(true);
-    setTimeout(() => setIsLoading(false), 800);
-  });
+    
+    try {
+      if (useMockData) {
+        // Use mock data
+        setGigs(MOCK_GIGS_DATA);
+        setVenues(MOCK_VENUES);
+        setActs(MOCK_ACTS);
+      } else {
+        // Fetch real data
+        const [gigsData, venuesData, actsData] = await Promise.all([
+          api.getGigs(organization.id),
+          api.getOrganizations('Venue'),
+          api.getOrganizations('Act'),
+        ]);
+
+        setGigs(gigsData || []);
+        setVenues(venuesData || []);
+        setActs(actsData || []);
+      }
+    } catch (error: any) {
+      console.error('Error loading data:', error);
+      toast.error('Failed to load data: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const setupRealtimeSubscription = () => {
+    const supabase = createClient();
+    
+    // Subscribe to changes on the gigs table for this organization
+    const channel = supabase
+      .channel('gigs')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'gigs',
+          filter: `organization_id=eq.${organization.id}`,
+        },
+        async (payload) => {
+          console.log('Real-time update:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            // Fetch the full gig with relations
+            try {
+              const newGig = await api.getGig(payload.new.id);
+              setGigs(prev => [newGig, ...prev]);
+              toast.success('New gig added');
+            } catch (error) {
+              console.error('Error fetching new gig:', error);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            // Fetch the updated gig with relations
+            try {
+              const updatedGig = await api.getGig(payload.new.id);
+              setGigs(prev => prev.map(g => g.id === updatedGig.id ? updatedGig : g));
+            } catch (error) {
+              console.error('Error fetching updated gig:', error);
+            }
+          } else if (payload.eventType === 'DELETE') {
+            setGigs(prev => prev.filter(g => g.id !== payload.old.id));
+            toast.success('Gig deleted');
+          }
+        }
+      )
+      .subscribe();
+
+    return channel;
+  };
 
   // Auto-focus input when entering edit mode
   useEffect(() => {
@@ -311,16 +396,16 @@ export default function GigListScreen({
 
     // Date range filter
     if (dateFrom) {
-      filtered = filtered.filter((gig) => new Date(gig.date) >= dateFrom);
+      filtered = filtered.filter((gig) => new Date(gig.start) >= dateFrom);
     }
     if (dateTo) {
-      filtered = filtered.filter((gig) => new Date(gig.date) <= dateTo);
+      filtered = filtered.filter((gig) => new Date(gig.start) <= dateTo);
     }
 
-    // Sort by date
+    // Sort by start datetime
     filtered.sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
+      const dateA = new Date(a.start).getTime();
+      const dateB = new Date(b.start).getTime();
       return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
     });
 
@@ -336,13 +421,15 @@ export default function GigListScreen({
 
   const hasActiveFilters = searchQuery || statusFilter !== 'All' || dateFrom || dateTo;
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+  const formatDate = (dateTimeString: string) => {
+    const date = new Date(dateTimeString);
     return format(date, 'MMM dd, yyyy');
   };
 
-  const formatTime = (startTime: string, endTime: string) => {
-    return `${startTime} - ${endTime}`;
+  const formatTime = (startDateTime: string, endDateTime: string) => {
+    const start = new Date(startDateTime);
+    const end = new Date(endDateTime);
+    return `${format(start, 'HH:mm')} - ${format(end, 'HH:mm')}`;
   };
 
   // Start editing a cell
@@ -387,7 +474,18 @@ export default function GigListScreen({
     const updatedGigs = gigs.map(gig => {
       if (gig.id === gigId) {
         if (field === 'title') return { ...gig, title: newValue };
-        if (field === 'date') return { ...gig, date: newValue };
+        if (field === 'date') {
+          // Update start datetime with new date, keeping the time
+          const currentStart = new Date(gig.start);
+          const newDate = new Date(newValue);
+          newDate.setHours(currentStart.getHours(), currentStart.getMinutes());
+          
+          const currentEnd = new Date(gig.end);
+          const duration = currentEnd.getTime() - currentStart.getTime();
+          const newEnd = new Date(newDate.getTime() + duration);
+          
+          return { ...gig, start: newDate.toISOString(), end: newEnd.toISOString() };
+        }
         if (field === 'status') return { ...gig, status: newValue };
         if (field === 'venue') return { ...gig, venue: newValue };
         if (field === 'act') return { ...gig, act: newValue };
@@ -400,21 +498,44 @@ export default function GigListScreen({
     // Show saving state
     setSavingCell({ gigId, field });
 
-    // Simulate API call
-    setTimeout(() => {
-      // Simulate random failure (5% chance)
-      if (Math.random() < 0.05) {
+    if (useMockData) {
+      // Simulate API call for mock data
+      setTimeout(() => {
+        setSavingCell(null);
+        toast.success('Changes saved successfully');
+      }, 800);
+    } else {
+      // Real API call
+      try {
+        const updateData: any = {};
+        
+        if (field === 'title') updateData.title = newValue;
+        if (field === 'date') {
+          // Find the updated gig from our optimistic update to get the new start/end
+          const updatedGig = updatedGigs.find(g => g.id === gigId);
+          if (updatedGig) {
+            updateData.start = updatedGig.start;
+            updateData.end = updatedGig.end;
+          }
+        }
+        if (field === 'status') updateData.status = newValue;
+        if (field === 'venue') updateData.venue_id = newValue?.id || null;
+        if (field === 'act') updateData.act_id = newValue?.id || null;
+        if (field === 'tags') updateData.tags = newValue;
+
+        await api.updateGig(gigId, updateData);
+        
+        // Real-time subscription will update the UI
+        setSavingCell(null);
+        toast.success('Changes saved successfully');
+      } catch (error: any) {
         // Rollback on error
         setGigs(previousGigs);
-        toast.error('Failed to save changes. Please try again.');
+        console.error('Error saving changes:', error);
+        toast.error('Failed to save changes: ' + (error.message || 'Unknown error'));
         setSavingCell(null);
-        return;
       }
-
-      // Success
-      setSavingCell(null);
-      toast.success('Changes saved successfully');
-    }, 800);
+    }
   };
 
   // Handle keyboard events
@@ -802,13 +923,13 @@ export default function GigListScreen({
                                     className="w-full h-8 justify-start text-left text-sm"
                                   >
                                     <CalendarIcon className="w-4 h-4 mr-2" />
-                                    {editValue ? format(new Date(editValue), 'MMM dd, yyyy') : formatDate(gig.date)}
+                                    {editValue ? format(new Date(editValue), 'MMM dd, yyyy') : formatDate(gig.start)}
                                   </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0" align="start" side="bottom">
                                   <Calendar
                                     mode="single"
-                                    selected={editValue ? new Date(editValue) : new Date(gig.date)}
+                                    selected={editValue ? new Date(editValue) : new Date(gig.start)}
                                     onSelect={(date) => {
                                       if (date) {
                                         const isoDate = format(date, 'yyyy-MM-dd');
@@ -823,10 +944,10 @@ export default function GigListScreen({
                           ) : (
                             <div className="flex items-center gap-2">
                               <button
-                                onClick={() => startEditing(gig.id, 'date', gig.date)}
+                                onClick={() => startEditing(gig.id, 'date', format(new Date(gig.start), 'yyyy-MM-dd'))}
                                 className="text-gray-700 hover:bg-gray-100 px-2 py-1 rounded text-left w-full"
                               >
-                                {formatDate(gig.date)}
+                                {formatDate(gig.start)}
                               </button>
                               {savingCell?.gigId === gig.id && savingCell?.field === 'date' && (
                                 <Loader2 className="w-3 h-3 animate-spin text-sky-500" />
@@ -843,7 +964,7 @@ export default function GigListScreen({
                               className="text-gray-700 hover:bg-gray-100 px-2 py-1 rounded text-left flex items-center gap-2 w-full"
                             >
                               <Clock className="w-4 h-4 text-gray-400" />
-                              {formatTime(gig.start_time, gig.end_time)}
+                              {formatTime(gig.start, gig.end)}
                             </button>
                             {savingCell?.gigId === gig.id && savingCell?.field === 'time' && (
                               <Loader2 className="w-3 h-3 animate-spin text-sky-500" />

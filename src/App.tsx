@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import LoginScreen from './components/LoginScreen';
 import OrganizationSelectionScreen from './components/OrganizationSelectionScreen';
 import CreateOrganizationScreen from './components/CreateOrganizationScreen';
@@ -7,13 +7,17 @@ import GigListScreen from './components/GigListScreen';
 import CreateGigScreen from './components/CreateGigScreen';
 import GigDetailScreen from './components/GigDetailScreen';
 import { Toaster } from './components/ui/sonner';
+import { createClient } from './utils/supabase/client';
 
 export type OrganizationType = 
-  | 'ProductionCompany' 
-  | 'SoundLightingCompany' 
-  | 'RentalCompany' 
-  | 'Venue' 
-  | 'Act';
+  | 'Production'
+  | 'Sound'
+  | 'Lighting'
+  | 'Staging'
+  | 'Rentals'
+  | 'Venue'
+  | 'Act'
+  | 'Agency';
 
 export type UserRole = 'Admin' | 'Manager' | 'Staff' | 'Viewer';
 
@@ -47,6 +51,9 @@ export interface User {
   last_name: string;
   avatar_url?: string;
 }
+
+// Set to true to use mock data instead of real Supabase
+const USE_MOCK_DATA = false;
 
 type Route = 
   | 'login' 
@@ -93,7 +100,12 @@ function App() {
     setCurrentRoute('org-selection');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (!USE_MOCK_DATA) {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    }
+    
     setCurrentUser(null);
     setSelectedOrganization(null);
     setUserOrganizations([]);
@@ -130,7 +142,7 @@ function App() {
   return (
     <>
       {currentRoute === 'login' && (
-        <LoginScreen onLogin={handleLogin} />
+        <LoginScreen onLogin={handleLogin} useMockData={USE_MOCK_DATA} />
       )}
       
       {currentRoute === 'org-selection' && currentUser && (
@@ -166,6 +178,7 @@ function App() {
           onBack={handleBackToDashboard}
           onCreateGig={handleCreateGig}
           onViewGig={handleViewGig}
+          useMockData={USE_MOCK_DATA}
         />
       )}
 
