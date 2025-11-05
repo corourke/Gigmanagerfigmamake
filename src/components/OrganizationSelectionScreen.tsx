@@ -27,11 +27,14 @@ interface OrganizationSelectionScreenProps {
 }
 
 const ORG_TYPE_CONFIG: Record<OrganizationType, { label: string; icon: typeof Building2; color: string }> = {
-  ProductionCompany: { label: 'Production Company', icon: Building2, color: 'bg-sky-100 text-sky-700' },
-  SoundLightingCompany: { label: 'Sound & Lighting', icon: Lightbulb, color: 'bg-amber-100 text-amber-700' },
-  RentalCompany: { label: 'Rental Company', icon: Warehouse, color: 'bg-purple-100 text-purple-700' },
+  Production: { label: 'Production Company', icon: Building2, color: 'bg-sky-100 text-sky-700' },
+  Sound: { label: 'Sound Company', icon: Lightbulb, color: 'bg-amber-100 text-amber-700' },
+  Lighting: { label: 'Lighting Company', icon: Lightbulb, color: 'bg-yellow-100 text-yellow-700' },
+  Staging: { label: 'Staging Company', icon: Warehouse, color: 'bg-indigo-100 text-indigo-700' },
+  Rentals: { label: 'Rental Company', icon: Warehouse, color: 'bg-purple-100 text-purple-700' },
   Venue: { label: 'Venue', icon: MapPin, color: 'bg-green-100 text-green-700' },
-  Act: { label: 'Act', icon: Music, color: 'bg-pink-100 text-pink-700' }
+  Act: { label: 'Act', icon: Music, color: 'bg-pink-100 text-pink-700' },
+  Agency: { label: 'Agency', icon: Building2, color: 'bg-blue-100 text-blue-700' }
 };
 
 const ROLE_CONFIG: Record<UserRole, { color: string }> = {

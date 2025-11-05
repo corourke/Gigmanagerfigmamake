@@ -5,7 +5,6 @@ import { Label } from './ui/label';
 import { Card } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
-import { Separator } from './ui/separator';
 import {
   Select,
   SelectContent,
@@ -23,17 +22,17 @@ import {
   Phone,
   Globe,
   X,
-  Check,
-  Lock
+  Check
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import MarkdownEditor from './MarkdownEditor';
-import TagsInput from './TagsInput';
 import type { Organization, OrganizationType } from '../App';
 
 interface CreateOrganizationScreenProps {
   onOrganizationCreated: (org: Organization) => void;
   onCancel: () => void;
+  userId?: string;
+  useMockData?: boolean;
 }
 
 interface FormData {
@@ -42,8 +41,6 @@ interface FormData {
   url: string;
   phone: string;
   description: string;
-  tags: string[];
-  notes: string;
   address_line1: string;
   address_line2: string;
   city: string;
@@ -75,35 +72,17 @@ interface GooglePlace {
 }
 
 const ORG_TYPES: { value: OrganizationType; label: string }[] = [
-  { value: 'ProductionCompany', label: 'Production Company' },
-  { value: 'SoundLightingCompany', label: 'Sound & Lighting Company' },
-  { value: 'RentalCompany', label: 'Rental Company' },
+  { value: 'Production', label: 'Production Company' },
+  { value: 'Sound', label: 'Sound Company' },
+  { value: 'Lighting', label: 'Lighting Company' },
+  { value: 'Staging', label: 'Staging Company' },
+  { value: 'Rentals', label: 'Rental Company' },
   { value: 'Venue', label: 'Venue' },
   { value: 'Act', label: 'Act' },
+  { value: 'Agency', label: 'Agency' },
 ];
 
-// Common tag suggestions
-const SUGGESTED_TAGS = [
-  'Concert',
-  'Corporate Event',
-  'Festival',
-  'Theater',
-  'Wedding',
-  'Live Music',
-  'DJ',
-  'Audio/Visual',
-  'Lighting',
-  'Sound',
-  'Stage',
-  'Rigging',
-  'Video Production',
-  'Broadcast',
-  'Recording',
-  'Preferred Vendor',
-  'Long-term Client',
-  'High Priority',
-  'VIP',
-];
+
 
 // Mock Google Places data
 const MOCK_PLACES: GooglePlace[] = [
@@ -159,7 +138,9 @@ const MOCK_PLACES: GooglePlace[] = [
 
 export default function CreateOrganizationScreen({
   onOrganizationCreated,
-  onCancel
+  onCancel,
+  userId,
+  useMockData = false,
 }: CreateOrganizationScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -174,8 +155,6 @@ export default function CreateOrganizationScreen({
     url: '',
     phone: '',
     description: '',
-    tags: [],
-    notes: '',
     address_line1: '',
     address_line2: '',
     city: '',
@@ -270,8 +249,6 @@ export default function CreateOrganizationScreen({
       url: '',
       phone: '',
       description: '',
-      tags: [],
-      notes: '',
       address_line1: '',
       address_line2: '',
       city: '',
@@ -343,44 +320,85 @@ export default function CreateOrganizationScreen({
     setIsSubmitting(true);
     setErrors({});
 
-    // Simulate API call
-    setTimeout(() => {
-      // Simulate duplicate name error (10% chance)
-      if (Math.random() < 0.1) {
-        setErrors({ name: 'An organization with this name already exists' });
+    // Mock data mode
+    if (useMockData) {
+      setTimeout(() => {
+        const newOrganization: Organization = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: formData.name.trim(),
+          type: formData.type as OrganizationType,
+          url: formData.url.trim() || undefined,
+          phone: formData.phone.trim() || undefined,
+          description: formData.description.trim() || undefined,
+          address_line1: formData.address_line1.trim() || undefined,
+          address_line2: formData.address_line2.trim() || undefined,
+          city: formData.city.trim() || undefined,
+          state: formData.state.trim() || undefined,
+          postal_code: formData.postal_code.trim() || undefined,
+          country: formData.country.trim() || undefined,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        toast.success('Organization created successfully!');
+        onOrganizationCreated(newOrganization);
+      }, 1500);
+      return;
+    }
+
+    // Real API call
+    try {
+      const { projectId } = await import('../utils/supabase/info');
+      const { createClient } = await import('../utils/supabase/client');
+      const supabase = createClient();
+      
+      // Get current session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        setErrors({ general: 'Not authenticated. Please sign in again.' });
         setIsSubmitting(false);
         return;
       }
 
-      // Simulate general error (5% chance)
-      if (Math.random() < 0.05) {
-        setErrors({ general: 'Failed to create organization. Please try again.' });
-        setIsSubmitting(false);
-        return;
+      const supabaseUrl = `https://${projectId}.supabase.co`;
+      
+      // Create organization via server endpoint
+      const response = await fetch(`${supabaseUrl}/functions/v1/make-server-de012ad4/organizations`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          type: formData.type,
+          url: formData.url.trim() || null,
+          phone_number: formData.phone.trim() || null,
+          description: formData.description.trim() || null,
+          address_line1: formData.address_line1.trim() || null,
+          address_line2: formData.address_line2.trim() || null,
+          city: formData.city.trim() || null,
+          state: formData.state.trim() || null,
+          postal_code: formData.postal_code.trim() || null,
+          country: formData.country.trim() || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create organization');
       }
 
-      // Success - create organization object
-      const newOrganization: Organization = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: formData.name.trim(),
-        type: formData.type as OrganizationType,
-        url: formData.url.trim() || undefined,
-        phone: formData.phone.trim() || undefined,
-        description: formData.description.trim() || undefined,
-        notes: formData.notes.trim() || undefined,
-        address_line1: formData.address_line1.trim() || undefined,
-        address_line2: formData.address_line2.trim() || undefined,
-        city: formData.city.trim() || undefined,
-        state: formData.state.trim() || undefined,
-        postal_code: formData.postal_code.trim() || undefined,
-        country: formData.country.trim() || undefined,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      const newOrganization = await response.json();
 
       toast.success('Organization created successfully!');
       onOrganizationCreated(newOrganization);
-    }, 1500);
+    } catch (err: any) {
+      console.error('Error creating organization:', err);
+      setErrors({ general: err.message || 'Failed to create organization. Please try again.' });
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -757,44 +775,6 @@ export default function CreateOrganizationScreen({
                       disabled={isSubmitting}
                     />
                   </div>
-                </div>
-              </div>
-
-              {/* Private Information Section */}
-              <div className="pt-8 mb-8">
-                <Separator className="mb-6" />
-                
-                <div className="flex items-start gap-2 mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm text-amber-900">
-                      <strong>Private to your organization:</strong> Tags and notes below are only visible to members of your organization.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Tags */}
-                <div className="space-y-2 mb-6">
-                  <Label htmlFor="tags">Tags</Label>
-                  <TagsInput
-                    value={formData.tags}
-                    onChange={(tags) => handleInputChange('tags', tags)}
-                    suggestions={SUGGESTED_TAGS}
-                    placeholder="Add tags to organize and categorize..."
-                    disabled={isSubmitting}
-                  />
-                </div>
-
-                {/* Notes Section with Markdown Editor */}
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Notes</Label>
-                  <MarkdownEditor
-                    value={formData.notes}
-                    onChange={(value) => handleInputChange('notes', value)}
-                    placeholder="Enter notes here... You can use **Markdown** formatting!"
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-sm text-gray-500">Add any internal notes or details about this organization.</p>
                 </div>
               </div>
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import LoginScreen from './components/LoginScreen';
+import UserProfileCompletionScreen from './components/UserProfileCompletionScreen';
 import OrganizationSelectionScreen from './components/OrganizationSelectionScreen';
 import CreateOrganizationScreen from './components/CreateOrganizationScreen';
 import Dashboard from './components/Dashboard';
@@ -57,6 +58,7 @@ const USE_MOCK_DATA = false;
 
 type Route = 
   | 'login' 
+  | 'profile-completion'
   | 'org-selection' 
   | 'create-org' 
   | 'dashboard' 
@@ -74,6 +76,22 @@ function App() {
   const handleLogin = (user: User, organizations: OrganizationMembership[]) => {
     setCurrentUser(user);
     setUserOrganizations(organizations);
+    
+    // Check if user needs to complete their profile
+    // Profile is considered incomplete if both first_name and last_name are empty
+    if (!user.first_name?.trim() && !user.last_name?.trim()) {
+      setCurrentRoute('profile-completion');
+    } else {
+      setCurrentRoute('org-selection');
+    }
+  };
+
+  const handleProfileCompleted = (updatedUser: User) => {
+    setCurrentUser(updatedUser);
+    setCurrentRoute('org-selection');
+  };
+
+  const handleSkipProfile = () => {
     setCurrentRoute('org-selection');
   };
 
@@ -145,6 +163,15 @@ function App() {
         <LoginScreen onLogin={handleLogin} useMockData={USE_MOCK_DATA} />
       )}
       
+      {currentRoute === 'profile-completion' && currentUser && (
+        <UserProfileCompletionScreen
+          user={currentUser}
+          onProfileCompleted={handleProfileCompleted}
+          onSkip={handleSkipProfile}
+          useMockData={USE_MOCK_DATA}
+        />
+      )}
+      
       {currentRoute === 'org-selection' && currentUser && (
         <OrganizationSelectionScreen
           user={currentUser}
@@ -154,10 +181,12 @@ function App() {
         />
       )}
       
-      {currentRoute === 'create-org' && (
+      {currentRoute === 'create-org' && currentUser && (
         <CreateOrganizationScreen
           onOrganizationCreated={handleOrganizationCreated}
           onCancel={handleBackToSelection}
+          userId={currentUser.id}
+          useMockData={USE_MOCK_DATA}
         />
       )}
       

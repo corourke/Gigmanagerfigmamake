@@ -66,8 +66,9 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
       });
 
       let userData;
-      if (userResponse.status === 400 || userResponse.status === 404) {
+      if (userResponse.status === 404) {
         // User doesn't exist, create profile
+        console.log('User profile not found, creating new profile...');
         const createResponse = await fetch(`${supabaseUrl}/functions/v1/make-server-de012ad4/users`, {
           method: 'POST',
           headers: {
@@ -82,12 +83,15 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
         
         if (!createResponse.ok) {
           const errorData = await createResponse.json();
+          console.error('Failed to create user profile:', errorData);
           throw new Error(errorData.error || 'Failed to create user profile');
         }
         
         userData = await createResponse.json();
+        console.log('User profile created successfully');
       } else if (!userResponse.ok) {
         const errorData = await userResponse.json();
+        console.error('Failed to fetch user profile:', errorData);
         throw new Error(errorData.error || 'Failed to fetch user profile');
       } else {
         userData = await userResponse.json();
@@ -154,8 +158,13 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
       });
 
       if (authError) {
-        console.error('Sign in error:', authError);
-        setError(authError.message);
+        console.error('Sign in error:', authError.message);
+        // Provide more user-friendly error messages
+        if (authError.message.includes('Invalid login credentials')) {
+          setError('Invalid email or password. Please check your credentials and try again.');
+        } else {
+          setError(authError.message);
+        }
         setIsLoading(false);
         return;
       }

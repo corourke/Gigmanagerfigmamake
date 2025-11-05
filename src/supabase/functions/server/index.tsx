@@ -117,16 +117,72 @@ app.get("/make-server-de012ad4/users/:id", async (c) => {
       .from('users')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('Error fetching user:', error);
       return c.json({ error: error.message }, 400);
     }
 
+    if (!data) {
+      console.log('User profile not found:', userId);
+      return c.json({ error: 'User profile not found' }, 404);
+    }
+
     return c.json(data);
   } catch (error) {
     console.error('Error in user fetch:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Update user profile
+app.put("/make-server-de012ad4/users/:id", async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const { user, error: authError } = await getAuthenticatedUser(authHeader);
+  
+  if (authError || !user) {
+    return c.json({ error: authError ?? 'Unauthorized' }, 401);
+  }
+
+  const userId = c.req.param('id');
+
+  // Ensure user can only update their own profile
+  if (user.id !== userId) {
+    return c.json({ error: 'Cannot update another user\'s profile' }, 403);
+  }
+
+  try {
+    const body = await c.req.json();
+    const { first_name, last_name, phone, address_line1, address_line2, city, state, postal_code, country } = body;
+
+    // Update user profile
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .update({
+        first_name,
+        last_name,
+        phone,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        postal_code,
+        country,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating user profile:', error);
+      return c.json({ error: error.message }, 400);
+    }
+
+    return c.json(data);
+  } catch (error) {
+    console.error('Error in user profile update:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
