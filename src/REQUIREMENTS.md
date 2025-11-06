@@ -375,7 +375,77 @@ const { data, error } = await supabase
 
 ---
 
-## 12. Current Implementation Status
+## 12. Google Places API Integration
+
+### 12.1 Purpose
+Allow users to quickly find and auto-fill their business information when creating organizations by searching Google Places.
+
+### 12.2 Features
+- **Text Search**: Search for businesses by name, address, or keywords
+- **Auto-fill**: Automatically populate organization form with:
+  - Business name
+  - Full address (street, city, state, postal code, country)
+  - Phone number
+  - Website URL
+  - Business description (from editorial summary)
+- **Place Details**: Fetch comprehensive information for selected places
+- **Fallback**: Manual entry option if business not found
+
+### 12.3 Technical Implementation
+
+#### Backend Endpoints
+**Search Places:**
+- `GET /make-server-de012ad4/places/search?query={query}`
+- Uses Google Places API Text Search
+- Returns up to 5 results with basic information
+- Requires authentication
+
+**Get Place Details:**
+- `GET /make-server-de012ad4/places/:placeId`
+- Uses Google Places API Place Details
+- Fetches complete information including phone, website, address components
+- Requires authentication
+
+#### API Key Management
+- Google Maps API key stored as `GOOGLE_MAPS_API_KEY` environment variable
+- Key is never exposed to frontend
+- All API calls proxied through backend server
+- Proper error handling for API quota/billing issues
+
+#### Frontend Integration
+- Search interface in CreateOrganizationScreen
+- Real-time search with loading states
+- Display results with business name, address, phone, website
+- Parse address components to fill individual form fields
+- Mock data fallback for development/testing
+
+### 12.4 Setup Requirements
+**User must obtain and configure Google Maps API key:**
+1. Enable Google Places API in Google Cloud Console
+2. Create API key with Places API access
+3. Upload key to `GOOGLE_MAPS_API_KEY` environment variable
+4. Ensure billing is enabled on Google Cloud project
+
+**Required Google APIs:**
+- Places API (New) or Places API (Legacy)
+- Enable both "Place Search" and "Place Details" APIs
+
+### 12.5 Error Handling
+- Graceful fallback when API key not configured
+- Clear error messages for API failures
+- Handle rate limiting and quota exceeded errors
+- Log errors server-side for debugging
+- User-friendly messages in frontend
+
+### 12.6 Data Privacy
+- User search queries are sent to Google Places API
+- No search data is stored in application database
+- Selected place information is only stored when user creates organization
+- Complies with Google Places API Terms of Service
+
+---
+
+## 13. Current Implementation Status
 
 ### Completed ✓
 - Google OAuth authentication flow
@@ -386,6 +456,11 @@ const { data, error } = await supabase
 - Error handling for authentication
 - Field name fixes (phone vs phone_number)
 - Enum value standardization
+- **Google Places API integration** (NEW)
+  - Backend endpoints for search and place details
+  - Frontend search interface in CreateOrganizationScreen
+  - Auto-fill organization form from Google Places data
+  - Mock data fallback for development
 
 ### In Progress 🔄
 - Dashboard screen Supabase integration
@@ -404,20 +479,20 @@ const { data, error } = await supabase
 
 ---
 
-## 13. Notes and Considerations
+## 14. Notes and Considerations
 
-### 13.1 Google OAuth Setup
+### 14.1 Google OAuth Setup
 - User must configure Google OAuth provider in Supabase dashboard
 - Follow instructions at: https://supabase.com/docs/guides/auth/social-login/auth-google
 - Required for authentication to work properly
 
-### 13.2 Database Constraints
+### 14.2 Database Constraints
 - Organization_id is required for most entities
 - Ensure referential integrity
 - Use UUIDs for all primary keys
 - Timestamps use server-side defaults
 
-### 13.3 User Experience
+### 14.3 User Experience
 - Smooth onboarding flow
 - Clear error messages
 - Loading states for async operations

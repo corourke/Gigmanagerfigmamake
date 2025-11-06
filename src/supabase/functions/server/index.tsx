@@ -658,4 +658,112 @@ app.delete("/make-server-de012ad4/gigs/:id", async (c) => {
   }
 });
 
+// ===== Google Places API Integration =====
+
+// Search Google Places
+app.get("/make-server-de012ad4/places/search", async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const { user, error: authError } = await getAuthenticatedUser(authHeader);
+  
+  if (authError || !user) {
+    return c.json({ error: authError ?? 'Unauthorized' }, 401);
+  }
+
+  const query = c.req.query('query');
+  
+  if (!query) {
+    return c.json({ error: 'Query parameter is required' }, 400);
+  }
+
+  const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
+  
+  if (!apiKey) {
+    console.error('Google Maps API key not configured');
+    return c.json({ error: 'Google Maps API key not configured' }, 500);
+  }
+
+  try {
+    // Use Google Places API Text Search
+    const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
+    url.searchParams.append('query', query);
+    url.searchParams.append('key', apiKey);
+
+    const response = await fetch(url.toString());
+    const data = await response.json();
+
+    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      console.error('Google Places API error:', data);
+      return c.json({ 
+        error: `Google Places API error: ${data.status}`,
+        details: data.error_message 
+      }, 500);
+    }
+
+    // Return results with limited fields
+    const results = (data.results || []).slice(0, 5).map((place: any) => ({
+      place_id: place.place_id,
+      name: place.name,
+      formatted_address: place.formatted_address,
+      // Note: Text Search doesn't include phone/website, need Place Details for that
+    }));
+
+    return c.json({ results });
+  } catch (error) {
+    console.error('Error in Google Places search:', error);
+    return c.json({ error: 'Internal server error while searching places' }, 500);
+  }
+});
+
+// Get Google Place details
+app.get("/make-server-de012ad4/places/:placeId", async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const { user, error: authError } = await getAuthenticatedUser(authHeader);
+  
+  if (authError || !user) {
+    return c.json({ error: authError ?? 'Unauthorized' }, 401);
+  }
+
+  const placeId = c.req.param('placeId');
+  const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
+  
+  if (!apiKey) {
+    console.error('Google Maps API key not configured');
+    return c.json({ error: 'Google Maps API key not configured' }, 500);
+  }
+
+  try {
+    // Use Google Places API Place Details
+    const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
+    url.searchParams.append('place_id', placeId);
+    url.searchParams.append('fields', 'name,formatted_address,formatted_phone_number,website,address_components,editorial_summary');
+    url.searchParams.append('key', apiKey);
+
+    const response = await fetch(url.toString());
+    const data = await response.json();
+
+    if (data.status !== 'OK') {
+      console.error('Google Places API error:', data);
+      return c.json({ 
+        error: `Google Places API error: ${data.status}`,
+        details: data.error_message 
+      }, 500);
+    }
+
+    const place = data.result;
+    
+    return c.json({
+      place_id: place.place_id || placeId,
+      name: place.name,
+      formatted_address: place.formatted_address,
+      formatted_phone_number: place.formatted_phone_number,
+      website: place.website,
+      editorial_summary: place.editorial_summary?.overview,
+      address_components: place.address_components || [],
+    });
+  } catch (error) {
+    console.error('Error in Google Places details fetch:', error);
+    return c.json({ error: 'Internal server error while fetching place details' }, 500);
+  }
+});
+
 Deno.serve(app.fetch);

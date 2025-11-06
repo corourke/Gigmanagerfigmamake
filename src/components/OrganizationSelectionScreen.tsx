@@ -85,7 +85,7 @@ export default function OrganizationSelectionScreen({
               <div className="inline-flex items-center justify-center w-10 h-10 bg-sky-500 rounded-lg">
                 <Building2 className="w-6 h-6 text-white" />
               </div>
-              <span className="text-gray-900">GigManager</span>
+              <span className="text-gray-900">Gig Manager</span>
             </div>
             
             <div className="flex items-center gap-3">

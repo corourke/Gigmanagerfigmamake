@@ -27,6 +27,13 @@ import {
 import { toast } from 'sonner@2.0.3';
 import MarkdownEditor from './MarkdownEditor';
 import type { Organization, OrganizationType } from '../App';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  `https://${projectId}.supabase.co`,
+  publicAnonKey
+);
 
 interface CreateOrganizationScreenProps {
   onOrganizationCreated: (org: Organization) => void;
@@ -168,21 +175,95 @@ export default function CreateOrganizationScreen({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!searchQuery.trim()) return;
 
     setIsSearching(true);
     setShowResults(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      const query = searchQuery.toLowerCase();
-      const results = MOCK_PLACES.filter(place =>
-        place.name.toLowerCase().includes(query)
+    // Use mock data if flag is set
+    if (useMockData) {
+      setTimeout(() => {
+        const query = searchQuery.toLowerCase();
+        const results = MOCK_PLACES.filter(place =>
+          place.name.toLowerCase().includes(query)
+        );
+        setSearchResults(results);
+        setIsSearching(false);
+      }, 800);
+      return;
+    }
+
+    // Real API call to Google Places
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast.error('Not authenticated. Please sign in again.');
+        setIsSearching(false);
+        setShowResults(false);
+        return;
+      }
+
+      // Search places
+      const searchResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/places/search?query=${encodeURIComponent(searchQuery)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        }
       );
-      setSearchResults(results);
+
+      if (!searchResponse.ok) {
+        const errorData = await searchResponse.json();
+        console.error('Places search error:', errorData);
+        toast.error(errorData.error || 'Failed to search places');
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      const { results: placeResults } = await searchResponse.json();
+
+      if (!placeResults || placeResults.length === 0) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      // Fetch details for each place to get phone, website, etc.
+      const detailedResults = await Promise.all(
+        placeResults.map(async (place: any) => {
+          try {
+            const detailsResponse = await fetch(
+              `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/places/${place.place_id}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${session.access_token}`,
+                },
+              }
+            );
+
+            if (detailsResponse.ok) {
+              return await detailsResponse.json();
+            }
+            // If details fetch fails, return basic info
+            return place;
+          } catch {
+            return place;
+          }
+        })
+      );
+
+      setSearchResults(detailedResults);
       setIsSearching(false);
-    }, 800);
+    } catch (error) {
+      console.error('Error searching places:', error);
+      toast.error('Failed to search places. Please try again.');
+      setSearchResults([]);
+      setIsSearching(false);
+    }
   };
 
   const parseAddressComponents = (components: GooglePlace['address_components']) => {
@@ -348,10 +429,6 @@ export default function CreateOrganizationScreen({
 
     // Real API call
     try {
-      const { projectId } = await import('../utils/supabase/info');
-      const { createClient } = await import('../utils/supabase/client');
-      const supabase = createClient();
-      
       // Get current session
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -361,10 +438,8 @@ export default function CreateOrganizationScreen({
         return;
       }
 
-      const supabaseUrl = `https://${projectId}.supabase.co`;
-      
       // Create organization via server endpoint
-      const response = await fetch(`${supabaseUrl}/functions/v1/make-server-de012ad4/organizations`, {
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/organizations`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -420,7 +495,7 @@ export default function CreateOrganizationScreen({
               <div className="inline-flex items-center justify-center w-10 h-10 bg-sky-500 rounded-lg">
                 <Building2 className="w-6 h-6 text-white" />
               </div>
-              <span className="text-gray-900">GigManager</span>
+              <span className="text-gray-900">Gig Manager</span>
             </div>
           </div>
         </div>
