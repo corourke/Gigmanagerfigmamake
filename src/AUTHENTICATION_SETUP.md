@@ -1,6 +1,6 @@
 # Authentication Setup Guide
 
-Gig Manager supports multiple authentication methods via Supabase Auth. You can enable any combination of these methods in your Supabase project.
+GigManager supports multiple authentication methods via Supabase Auth. You can enable any combination of these methods in your Supabase project.
 
 ## Supported Authentication Methods
 

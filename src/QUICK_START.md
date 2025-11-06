@@ -1,6 +1,6 @@
-# Gig Manager - Quick Start Guide
+# Quick Start Guide
 
-Get your Gig Manager app up and running in minutes!
+Get your app up and running in minutes!
 
 ## Option 1: Quick Start with Mock Data (No Setup)
 
@@ -121,7 +121,7 @@ Want to allow users to sign in with Google? Follow these steps.
 4. Click "OAuth consent screen"
 5. Choose "External" and click "Create"
 6. Fill in required fields:
-   - App name: "Gig Manager"
+   - App name: "GigManager"
    - User support email: Your email
    - Developer contact: Your email
 7. Click "Save and Continue" through all screens
@@ -131,7 +131,7 @@ Want to allow users to sign in with Google? Follow these steps.
 1. In Google Cloud Console, go to "Credentials"
 2. Click "Create Credentials" → "OAuth 2.0 Client ID"
 3. Choose "Web application"
-4. Name: "Gig Manager Web Client"
+4. Name: "GigManager Web Client"
 5. Add Authorized redirect URI:
    ```
    https://YOUR-PROJECT-ID.supabase.co/auth/v1/callback
@@ -260,7 +260,7 @@ This is powered by Supabase Realtime!
 - [ ] Google OAuth configured (optional)
 - [ ] Tested real-time updates (optional)
 
-**All checked?** Congratulations! Your Gig Manager is fully operational! 🚀
+**All checked?** Congratulations! Your GigManager is fully operational! 🚀
 
 ---
 

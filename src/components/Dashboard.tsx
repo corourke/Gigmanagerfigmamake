@@ -54,7 +54,7 @@ export default function Dashboard({
               </div>
               <div>
                 <h2 className="text-gray-900">{organization.name}</h2>
-                <p className="text-xs text-gray-500">Gig Manager</p>
+                <p className="text-xs text-gray-500">GigManager</p>
               </div>
             </div>
 

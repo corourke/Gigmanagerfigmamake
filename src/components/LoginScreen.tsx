@@ -270,7 +270,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
           <div className="inline-flex items-center justify-center w-16 h-16 bg-sky-500 rounded-2xl mb-4">
             <Building2 className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-sky-900 mb-2">Gig Manager</h1>
+          <h1 className="text-sky-900 mb-2">GigManager</h1>
           <p className="text-gray-600">Production and event management platform</p>
         </div>
 
@@ -483,7 +483,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
 
         {/* Footer */}
         <div className="mt-6 text-center text-sm text-gray-600">
-          <p>© 2025 Gig Manager. All rights reserved.</p>
+          <p>© 2025 GigManager. All rights reserved.</p>
         </div>
       </div>
     </div>

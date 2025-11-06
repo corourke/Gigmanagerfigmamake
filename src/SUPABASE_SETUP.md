@@ -1,6 +1,6 @@
-# Supabase Setup Guide for Gig Manager
+# Supabase Setup Guide
 
-This guide will help you set up your Supabase backend to work with the Gig Manager application.
+This guide will help you set up your Supabase backend to work with the GigManager application.
 
 ## Prerequisites
 
