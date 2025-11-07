@@ -46,8 +46,13 @@ const MOCK_GIG: Gig = {
   updated_at: '2025-01-15T10:00:00Z',
 };
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<GigStatus, { color: string; label: string }> = {
+  'DateHold': { color: 'bg-gray-100 text-gray-700 border-gray-300', label: 'Date Hold' },
+  'Proposed': { color: 'bg-blue-100 text-blue-700 border-blue-300', label: 'Proposed' },
   'Booked': { color: 'bg-green-100 text-green-700 border-green-300', label: 'Booked' },
+  'Completed': { color: 'bg-purple-100 text-purple-700 border-purple-300', label: 'Completed' },
+  'Cancelled': { color: 'bg-red-100 text-red-700 border-red-300', label: 'Cancelled' },
+  'Settled': { color: 'bg-emerald-100 text-emerald-700 border-emerald-300', label: 'Settled' },
 };
 
 export default function GigDetailScreen({

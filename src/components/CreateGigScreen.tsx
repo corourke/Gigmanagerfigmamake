@@ -74,12 +74,12 @@ const TIMEZONES = [
 ];
 
 const STATUS_OPTIONS: GigStatus[] = [
-  'Hold Date',
+  'DateHold',
   'Proposed',
   'Booked',
   'Completed',
   'Cancelled',
-  'Paid',
+  'Settled',
 ];
 
 const SUGGESTED_TAGS = [
