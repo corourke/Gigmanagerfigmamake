@@ -265,6 +265,64 @@ app.post("/make-server-de012ad4/organizations", async (c) => {
   }
 });
 
+// Join an existing organization
+app.post("/make-server-de012ad4/organizations/:orgId/join", async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const { user, error: authError } = await getAuthenticatedUser(authHeader);
+  
+  if (authError || !user) {
+    return c.json({ error: authError ?? 'Unauthorized' }, 401);
+  }
+
+  const orgId = c.req.param('orgId');
+
+  try {
+    // Check if organization exists
+    const { data: org, error: orgError } = await supabaseAdmin
+      .from('organizations')
+      .select('*')
+      .eq('id', orgId)
+      .single();
+
+    if (orgError || !org) {
+      return c.json({ error: 'Organization not found' }, 404);
+    }
+
+    // Check if user is already a member
+    const { data: existingMember } = await supabaseAdmin
+      .from('organization_members')
+      .select('*')
+      .eq('organization_id', orgId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (existingMember) {
+      return c.json({ error: 'Already a member of this organization' }, 400);
+    }
+
+    // Add user as a Viewer by default
+    const { data: membership, error: memberError } = await supabaseAdmin
+      .from('organization_members')
+      .insert({
+        organization_id: orgId,
+        user_id: user.id,
+        role: 'Viewer',
+      })
+      .select()
+      .single();
+
+    if (memberError) {
+      console.error('Error joining organization:', memberError);
+      return c.json({ error: memberError.message }, 400);
+    }
+
+    return c.json({ organization: org, role: membership.role });
+  } catch (error) {
+    console.error('Error in organization join:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Get organizations (for venue/act selection)
 app.get("/make-server-de012ad4/organizations", async (c) => {
   const authHeader = c.req.header('Authorization');
