@@ -20,19 +20,35 @@
 ## 2. Authentication & Authorization
 
 ### 2.1 Authentication Method
-- **Google OAuth** via Supabase Auth
+- **Google OAuth** via Supabase Auth (PRIMARY METHOD)
 - After successful sign-in, redirect users to the application
 - Support for social login through Google provider
 - Session management via Supabase Auth
+- **Additional Authentication Methods Available:**
+  - Email/password authentication (if enabled in Supabase)
+  - Other OAuth providers (GitHub, Facebook, etc.) can be enabled in Supabase dashboard
+  - Magic link authentication (if configured)
+- Users must complete provider setup in Supabase dashboard following provider-specific instructions
 
-### 2.2 User Roles
+### 2.2 Post-Authentication Profile Collection (IMPLEMENTED ✓)
+After successful authentication (first-time users):
+1. Check if user profile exists in database
+2. If no profile exists, show ProfileCompletionScreen
+3. Collect required user information:
+   - Full name (required)
+   - Phone number (optional)
+   - Preferred role (Admin, Manager, Staff, Viewer)
+4. Create user profile in database with collected information
+5. Proceed to organization selection flow
+
+### 2.3 User Roles
 The application supports four distinct user roles with different permission levels:
 - **Admin** - Full access to organization data and settings
 - **Manager** - Can create and manage gigs, equipment, and staff
 - **Staff** - Limited access to assigned gigs and tasks
 - **Viewer** - Read-only access to organization data
 
-### 2.3 Organization-Based Access Control
+### 2.4 Organization-Based Access Control
 - Users belong to one or more organizations
 - Access to data is scoped by organization membership
 - User profile includes `org_id` field for primary organization association
@@ -233,10 +249,22 @@ After Google OAuth sign-in:
 
 ### 7.2 Organization Selection (IMPLEMENTED ✓)
 After profile completion:
-1. Show OrganizationSelectionScreen
-2. User can either:
-   - Select existing organization (if invited)
-   - Create new organization with name and type
+1. **Smart Auto-Selection** (IMPLEMENTED ✓):
+   - If user is a member of only ONE organization, automatically bypass the organization selection screen
+   - Directly redirect to the main application with that organization set as active
+   - Improves UX by reducing unnecessary navigation steps
+
+2. **Organization Selection Screen** (shown only if user belongs to multiple organizations OR has no organizations):
+   - Display list of user's current organizations
+   - Allow selection of existing organization
+   - Allow creation of new organization with name and type
+   - **Enhanced Organization Search** (IMPLEMENTED ✓):
+     - Search for ANY organization in the system (not just user's current organizations)
+     - Display ALL matching organizations in search results
+     - View organization details (name, type, location)
+     - Request to join organization as Viewer role
+     - Backend endpoint: `/make-server-de012ad4/organizations/join`
+
 3. Update user.org_id with selected/created organization
 4. Redirect to main application
 
@@ -251,7 +279,34 @@ After profile completion:
 
 ## 8. Application Screens
 
-### 8.1 Screens Requiring Supabase Integration
+### 8.1 Consistent Navigation and Page Header (IMPLEMENTED ✓)
+
+All application screens must include a consistent navigation system:
+
+#### AppHeader Component
+- **Location:** Displayed at the top of every screen in the main application
+- **Content:**
+  - Application logo/branding ("Gig Manager")
+  - Current organization name
+  - User's role in the current organization
+  - User profile menu with logout option
+- **Functionality:**
+  - Provides context to users about which organization they're viewing
+  - Shows their permission level (role) in that organization
+  - Allows quick access to account settings and logout
+  - Maintains consistent branding across all pages
+- **Implementation:**
+  - Reusable component imported across all main application screens
+  - Fetches current user and organization data from Supabase
+  - Updates dynamically when organization context changes
+
+#### Navigation Benefits
+- Users always know which organization they're viewing
+- Clear visibility of their role/permissions
+- Consistent user experience across the application
+- Easy access to account management functions
+
+### 8.2 Screens Requiring Supabase Integration
 
 #### Dashboard (PENDING)
 - Overview of upcoming gigs
@@ -282,7 +337,7 @@ After profile completion:
 - Pagination or infinite scroll
 - Quick actions (edit, delete, view)
 
-### 8.2 Data Fetching Requirements
+### 8.3 Data Fetching Requirements
 - Replace all mock data calls with Supabase queries
 - Implement proper error handling
 - Show loading states
@@ -448,19 +503,38 @@ Allow users to quickly find and auto-fill their business information when creati
 ## 13. Current Implementation Status
 
 ### Completed ✓
-- Google OAuth authentication flow
-- User profile creation and completion
-- Organization selection and creation
-- Database schema implementation
-- Row-Level Security policies
-- Error handling for authentication
-- Field name fixes (phone vs phone_number)
-- Enum value standardization
-- **Google Places API integration** (NEW)
+- **Authentication & Authorization:**
+  - Google OAuth authentication flow via Supabase Auth
+  - Support for multiple authentication methods (configurable in Supabase)
+  - Post-authentication profile collection screen
+  - User profile creation and completion
+  - Session management and redirect flow
+  
+- **Organization Management:**
+  - Organization selection and creation
+  - Smart auto-selection for single-organization users (bypasses org selection screen)
+  - Enhanced organization search (displays ALL matching organizations, not just user's)
+  - Backend endpoint for joining organizations as Viewer role
+  - Google Places API integration for organization lookup
+  
+- **Google Places API Integration:**
   - Backend endpoints for search and place details
   - Frontend search interface in CreateOrganizationScreen
   - Auto-fill organization form from Google Places data
   - Mock data fallback for development
+  
+- **Navigation & UX:**
+  - Consistent AppHeader component across all screens
+  - Display of organization name and user role in header
+  - User profile menu with logout functionality
+  - Context-aware navigation
+
+- **Database & Security:**
+  - Database schema implementation (Prisma)
+  - Row-Level Security policies
+  - Error handling for authentication
+  - Field name fixes (phone vs phone_number)
+  - Enum value standardization
 
 ### In Progress 🔄
 - Dashboard screen Supabase integration
@@ -502,5 +576,5 @@ Allow users to quickly find and auto-fill their business information when creati
 ---
 
 ## Document Version
-**Last Updated:** November 6, 2025  
+**Last Updated:** November 7, 2025  
 **Status:** Living document - updated as requirements evolve
