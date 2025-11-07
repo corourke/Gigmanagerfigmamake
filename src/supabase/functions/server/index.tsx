@@ -728,6 +728,8 @@ app.get("/make-server-de012ad4/places/search", async (c) => {
   }
 
   const query = c.req.query('query');
+  const latitude = c.req.query('latitude');
+  const longitude = c.req.query('longitude');
   
   if (!query) {
     return c.json({ error: 'Query parameter is required' }, 400);
@@ -741,10 +743,51 @@ app.get("/make-server-de012ad4/places/search", async (c) => {
   }
 
   try {
-    // Use Google Places API Text Search
+    // Define entertainment/event-related business types to prefer
+    const relevantTypes = [
+      'point_of_interest',
+      'establishment',
+      'night_club',
+      'stadium',
+      'movie_theater',
+      'amusement_park',
+      'art_gallery',
+      'museum',
+      'convention_center',
+      'tourist_attraction',
+      'bar',
+      'restaurant', // Venues sometimes categorized as restaurants
+    ];
+
+    // Keywords that indicate relevance to our industry
+    const relevantKeywords = [
+      'sound', 'audio', 'lighting', 'stage', 'staging', 'production',
+      'event', 'venue', 'entertainment', 'music', 'concert', 'theater',
+      'theatre', 'show', 'performance', 'rental', 'av', 'pro audio',
+      'equipment', 'technical', 'rigging', 'truss', 'speaker', 'band',
+      'dj', 'disco', 'nightclub', 'club', 'hall', 'ballroom', 'arena',
+      'amphitheater', 'festival', 'catering', 'studio', 'recording'
+    ];
+
+    // Keywords that indicate likely irrelevance (exclude if these are primary descriptors)
+    const irrelevantKeywords = [
+      'plumbing', 'hvac', 'roofing', 'concrete', 'paving', 'asphalt',
+      'landscaping', 'lawn', 'automotive', 'car wash', 'gas station',
+      'convenience store', 'grocery', 'pharmacy', 'medical', 'dental',
+      'doctor', 'clinic', 'hospital', 'attorney', 'lawyer', 'insurance',
+      'real estate', 'bank', 'credit union', 'tax', 'accounting'
+    ];
+
+    // Use Google Places API Text Search with location bias if provided
     const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
     url.searchParams.append('query', query);
     url.searchParams.append('key', apiKey);
+    
+    // Add location bias for proximity sorting if coordinates provided
+    if (latitude && longitude) {
+      url.searchParams.append('location', `${latitude},${longitude}`);
+      url.searchParams.append('radius', '50000'); // 50km radius for better results
+    }
 
     const response = await fetch(url.toString());
     const data = await response.json();
@@ -757,11 +800,63 @@ app.get("/make-server-de012ad4/places/search", async (c) => {
       }, 500);
     }
 
-    // Return results with limited fields
-    const results = (data.results || []).slice(0, 5).map((place: any) => ({
-      place_id: place.place_id,
-      name: place.name,
-      formatted_address: place.formatted_address,
+    // Filter and score results based on relevance
+    const scoredResults = (data.results || []).map((place: any) => {
+      const name = (place.name || '').toLowerCase();
+      const types = place.types || [];
+      
+      let score = 0;
+      
+      // Boost score if name starts with the query (partial match from beginning)
+      if (name.startsWith(query.toLowerCase())) {
+        score += 50;
+      } else if (name.includes(query.toLowerCase())) {
+        score += 20;
+      }
+      
+      // Check if name or types contain relevant keywords
+      const nameWords = name.split(/\s+/);
+      for (const keyword of relevantKeywords) {
+        if (name.includes(keyword.toLowerCase())) {
+          score += 30;
+        }
+      }
+      
+      // Check if business type is relevant
+      const hasRelevantType = types.some((type: string) => 
+        relevantTypes.includes(type)
+      );
+      if (hasRelevantType) {
+        score += 10;
+      }
+      
+      // Penalize if name contains irrelevant keywords as primary descriptors
+      for (const keyword of irrelevantKeywords) {
+        if (nameWords.includes(keyword.toLowerCase())) {
+          score -= 100; // Strong penalty for clearly irrelevant businesses
+        }
+      }
+      
+      return {
+        place_id: place.place_id,
+        name: place.name,
+        formatted_address: place.formatted_address,
+        types: place.types,
+        score: score,
+      };
+    });
+
+    // Filter out clearly irrelevant results (negative score) but keep uncertain ones
+    const filteredResults = scoredResults.filter((result: any) => result.score >= 0);
+    
+    // Sort by score (highest first) - this handles both relevance and proximity
+    filteredResults.sort((a: any, b: any) => b.score - a.score);
+    
+    // Return top 10 results
+    const results = filteredResults.slice(0, 10).map((result: any) => ({
+      place_id: result.place_id,
+      name: result.name,
+      formatted_address: result.formatted_address,
       // Note: Text Search doesn't include phone/website, need Place Details for that
     }));
 

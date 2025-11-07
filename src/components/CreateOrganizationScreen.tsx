@@ -175,9 +175,9 @@ export default function CreateOrganizationScreen({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSearch = async () => {
+  const handleSearchPlaces = async () => {
     if (!searchQuery.trim()) return;
-
+    
     setIsSearching(true);
     setShowResults(true);
 
@@ -205,15 +205,39 @@ export default function CreateOrganizationScreen({
         return;
       }
 
-      // Search places
-      const searchResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/places/search?query=${encodeURIComponent(searchQuery)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
+      // Get user's location for proximity-based sorting
+      let userLocation: { latitude: number; longitude: number } | null = null;
+      
+      try {
+        if (navigator.geolocation) {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              timeout: 5000,
+              enableHighAccuracy: false,
+            });
+          });
+          userLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
         }
-      );
+      } catch (geoError) {
+        // Silently fail - search will still work without location
+        console.log('Geolocation not available or denied:', geoError);
+      }
+
+      // Build search URL with optional location parameters
+      let searchUrl = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/places/search?query=${encodeURIComponent(searchQuery)}`;
+      if (userLocation) {
+        searchUrl += `&latitude=${userLocation.latitude}&longitude=${userLocation.longitude}`;
+      }
+
+      // Search places
+      const searchResponse = await fetch(searchUrl, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
 
       if (!searchResponse.ok) {
         const errorData = await searchResponse.json();
@@ -525,12 +549,12 @@ export default function CreateOrganizationScreen({
                   placeholder="Search for your business name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearchPlaces()}
                   className="pl-10"
                 />
               </div>
               <Button
-                onClick={handleSearch}
+                onClick={handleSearchPlaces}
                 disabled={isSearching || !searchQuery.trim()}
                 className="bg-sky-500 hover:bg-sky-600 text-white"
               >

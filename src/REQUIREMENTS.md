@@ -437,6 +437,10 @@ Allow users to quickly find and auto-fill their business information when creati
 
 ### 12.2 Features
 - **Text Search**: Search for businesses by name, address, or keywords
+  - When searching, allow for a partial match with the beginning of a business name, so 'Milbourne' would match 'Milbourne Sound'.
+  - List businesses in proximity to the user first
+  - Prefer to omit vendor that are clearly not associated with entertainment, staging, lighting, sound, music, venues, etc. If in doubt, include the organization in the list.
+  - List a maximum of 10 busineses.
 - **Auto-fill**: Automatically populate organization form with:
   - Business name
   - Full address (street, city, state, postal code, country)
