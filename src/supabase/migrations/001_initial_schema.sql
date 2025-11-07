@@ -1,4 +1,4 @@
--- GigManager Database Schema
+-- Gig Manager Database Schema
 -- Run this SQL in your Supabase SQL Editor to create all tables and Row-Level Security policies
 
 -- Enable UUID extension

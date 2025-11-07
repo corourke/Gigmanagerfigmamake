@@ -73,6 +73,15 @@ function App() {
   const [userOrganizations, setUserOrganizations] = useState<OrganizationMembership[]>([]);
   const [selectedGigId, setSelectedGigId] = useState<string | null>(null);
 
+  // Get user's role in the current organization
+  const getCurrentUserRole = (): UserRole | undefined => {
+    if (!selectedOrganization) return undefined;
+    const membership = userOrganizations.find(
+      (m) => m.organization.id === selectedOrganization.id
+    );
+    return membership?.role;
+  };
+
   const handleLogin = (user: User, organizations: OrganizationMembership[]) => {
     setCurrentUser(user);
     setUserOrganizations(organizations);
@@ -81,6 +90,10 @@ function App() {
     // Profile is considered incomplete if both first_name and last_name are empty
     if (!user.first_name?.trim() && !user.last_name?.trim()) {
       setCurrentRoute('profile-completion');
+    } else if (organizations.length === 1) {
+      // Auto-select if user is only a member of one organization
+      setSelectedOrganization(organizations[0].organization);
+      setCurrentRoute('dashboard');
     } else {
       setCurrentRoute('org-selection');
     }
@@ -88,7 +101,13 @@ function App() {
 
   const handleProfileCompleted = (updatedUser: User) => {
     setCurrentUser(updatedUser);
-    setCurrentRoute('org-selection');
+    // After profile completion, check if user has only one org
+    if (userOrganizations.length === 1) {
+      setSelectedOrganization(userOrganizations[0].organization);
+      setCurrentRoute('dashboard');
+    } else {
+      setCurrentRoute('org-selection');
+    }
   };
 
   const handleSkipProfile = () => {
@@ -106,10 +125,12 @@ function App() {
 
   const handleOrganizationCreated = (org: Organization) => {
     // Add new organization to user's list with Admin role
-    setUserOrganizations([
-      ...userOrganizations,
-      { organization: org, role: 'Admin' }
-    ]);
+    const newMembership: OrganizationMembership = {
+      organization: org,
+      role: 'Admin'
+    };
+    const updatedOrgs = [...userOrganizations, newMembership];
+    setUserOrganizations(updatedOrgs);
     setSelectedOrganization(org);
     setCurrentRoute('dashboard');
   };
@@ -194,9 +215,11 @@ function App() {
         <Dashboard
           organization={selectedOrganization}
           user={currentUser}
+          userRole={getCurrentUserRole()}
           onBackToSelection={handleBackToSelection}
           onLogout={handleLogout}
           onNavigateToGigs={handleNavigateToGigs}
+          onNavigateToDashboard={handleBackToDashboard}
         />
       )}
 

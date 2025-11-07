@@ -673,10 +673,6 @@
     margin-left: calc(var(--spacing) * 1.5);
   }
 
-  .ml-2 {
-    margin-left: calc(var(--spacing) * 2);
-  }
-
   .ml-auto {
     margin-left: auto;
   }
@@ -860,6 +856,10 @@
     max-height: 120px;
   }
 
+  .max-h-\[140px\] {
+    max-height: 140px;
+  }
+
   .max-h-\[300px\] {
     max-height: 300px;
   }
@@ -880,16 +880,8 @@
     min-height: 100vh;
   }
 
-  .w-1\/2 {
-    width: 50%;
-  }
-
   .w-2 {
     width: calc(var(--spacing) * 2);
-  }
-
-  .w-2\/3 {
-    width: 66.6667%;
   }
 
   .w-3 {
@@ -898,10 +890,6 @@
 
   .w-3\.5 {
     width: calc(var(--spacing) * 3.5);
-  }
-
-  .w-3\/4 {
-    width: 75%;
   }
 
   .w-4 {
@@ -2299,12 +2287,6 @@
   @media (hover: hover) {
     .hover\:text-sky-700:hover {
       color: var(--color-sky-700);
-    }
-  }
-
-  @media (hover: hover) {
-    .hover\:no-underline:hover {
-      text-decoration-line: none;
     }
   }
 

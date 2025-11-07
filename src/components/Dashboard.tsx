@@ -1,135 +1,46 @@
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import AppHeader from './AppHeader';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
-import {
-  Building2,
   LayoutDashboard,
   Calendar,
   Users,
   Package,
-  Settings,
-  LogOut,
-  SwitchCamera,
 } from 'lucide-react';
-import type { Organization, User } from '../App';
+import type { Organization, User, UserRole } from '../App';
 
 interface DashboardProps {
   organization: Organization;
   user: User;
+  userRole?: UserRole;
   onBackToSelection: () => void;
   onLogout: () => void;
   onNavigateToGigs?: () => void;
+  onNavigateToDashboard?: () => void;
 }
 
 export default function Dashboard({
   organization,
   user,
+  userRole,
   onBackToSelection,
   onLogout,
-  onNavigateToGigs
+  onNavigateToGigs,
+  onNavigateToDashboard
 }: DashboardProps) {
-  const getInitials = (firstName: string, lastName: string) => {
-    return `${firstName[0]}${lastName[0]}`.toUpperCase();
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Top Bar */}
-          <div className="flex items-center justify-between h-16 border-b border-gray-100">
-            <div className="flex items-center gap-4">
-              <div className="inline-flex items-center justify-center w-10 h-10 bg-sky-500 rounded-lg">
-                <Building2 className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-gray-900">{organization.name}</h2>
-                <p className="text-xs text-gray-500">GigManager</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onBackToSelection}
-                className="hidden sm:flex"
-              >
-                <SwitchCamera className="w-4 h-4 mr-2" />
-                Switch Organization
-              </Button>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-                    <Avatar className="w-10 h-10">
-                      <AvatarImage src={user.avatar_url} alt={`${user.first_name} ${user.last_name}`} />
-                      <AvatarFallback className="bg-sky-100 text-sky-700">
-                        {getInitials(user.first_name, user.last_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>
-                    <div>
-                      <p className="text-sm">{user.first_name} {user.last_name}</p>
-                      <p className="text-xs text-gray-500">{user.email}</p>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onBackToSelection}>
-                    <SwitchCamera className="w-4 h-4 mr-2" />
-                    Switch Organization
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Settings className="w-4 h-4 mr-2" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onLogout} className="text-red-600">
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
-          {/* Navigation Bar */}
-          <nav className="flex items-center gap-1 h-12">
-            <button className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2">
-              <LayoutDashboard className="w-4 h-4" />
-              Dashboard
-            </button>
-            <button 
-              onClick={onNavigateToGigs}
-              className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <Calendar className="w-4 h-4" />
-              Events
-            </button>
-            <button className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Team
-            </button>
-            <button className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2">
-              <Package className="w-4 h-4" />
-              Equipment
-            </button>
-          </nav>
-        </div>
-      </div>
+      <AppHeader
+        organization={organization}
+        user={user}
+        userRole={userRole}
+        currentRoute="dashboard"
+        onNavigateToDashboard={onNavigateToDashboard}
+        onNavigateToGigs={onNavigateToGigs}
+        onSwitchOrganization={onBackToSelection}
+        onLogout={onLogout}
+      />
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
