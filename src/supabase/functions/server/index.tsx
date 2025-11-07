@@ -494,7 +494,15 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
 
   try {
     const body = await c.req.json();
-    const { organization_id, venue_id, act_id, ...gigData } = body;
+    const { 
+      organization_id, 
+      venue_id, 
+      act_id, 
+      participants = [],
+      staff = [],
+      equipment = [],
+      ...gigData 
+    } = body;
 
     // Verify user has access to create gigs for this organization
     const { data: membership } = await supabaseAdmin
@@ -505,7 +513,7 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       .single();
 
     if (!membership || (membership.role !== 'Admin' && membership.role !== 'Manager')) {
-      return c.json({ error: 'Insufficient permissions' }, 403);
+      return c.json({ error: 'Insufficient permissions. Only Admins and Managers can create gigs.' }, 403);
     }
 
     // Set created_by and updated_by
@@ -528,19 +536,86 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
     }
 
     // Create participants
-    const participants = [];
+    const participantsToInsert = [];
     if (venue_id) {
-      participants.push({ gig_id: gig.id, organization_id: venue_id, role: 'Venue' });
+      participantsToInsert.push({ 
+        gig_id: gig.id, 
+        organization_id: venue_id, 
+        role: 'Venue',
+        status: 'Confirmed'
+      });
     }
     if (act_id) {
-      participants.push({ gig_id: gig.id, organization_id: act_id, role: 'Act' });
+      participantsToInsert.push({ 
+        gig_id: gig.id, 
+        organization_id: act_id, 
+        role: 'Act',
+        status: 'Confirmed'
+      });
+    }
+    
+    // Add additional participants (sound, lighting, etc.)
+    participants.forEach((p: any) => {
+      if (p.organization_id && p.role) {
+        participantsToInsert.push({
+          gig_id: gig.id,
+          organization_id: p.organization_id,
+          role: p.role,
+          status: p.status || 'Pending',
+          notes: p.notes || null,
+        });
+      }
+    });
+
+    if (participantsToInsert.length > 0) {
+      const { error: participantsError } = await supabaseAdmin
+        .from('gig_participants')
+        .insert(participantsToInsert);
+      
+      if (participantsError) {
+        console.error('Error creating participants:', participantsError);
+      }
     }
 
-    if (participants.length > 0) {
-      await supabaseAdmin.from('gig_participants').insert(participants);
+    // Create staff assignments
+    if (staff.length > 0) {
+      const staffToInsert = staff.map((s: any) => ({
+        gig_id: gig.id,
+        user_id: s.user_id,
+        staff_role_id: s.staff_role_id || null,
+        role: s.role || null,
+        rate: s.rate || null,
+        notes: s.notes || null,
+      }));
+
+      const { error: staffError } = await supabaseAdmin
+        .from('gig_staff')
+        .insert(staffToInsert);
+      
+      if (staffError) {
+        console.error('Error creating staff assignments:', staffError);
+      }
     }
 
-    // Fetch the gig with participants
+    // Create equipment allocations
+    if (equipment.length > 0) {
+      const equipmentToInsert = equipment.map((e: any) => ({
+        gig_id: gig.id,
+        equipment_id: e.equipment_id,
+        quantity: e.quantity || 1,
+        notes: e.notes || null,
+      }));
+
+      const { error: equipmentError } = await supabaseAdmin
+        .from('gig_equipment')
+        .insert(equipmentToInsert);
+      
+      if (equipmentError) {
+        console.error('Error creating equipment allocations:', equipmentError);
+      }
+    }
+
+    // Fetch the complete gig with all relations
     const { data: participantsData } = await supabaseAdmin
       .from('gig_participants')
       .select('*, organization:organization_id(*)')
@@ -553,10 +628,11 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       ...gig,
       venue,
       act,
+      participants: participantsData || [],
     });
   } catch (error) {
     console.error('Error in gig creation:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    return c.json({ error: 'Internal server error while creating gig' }, 500);
   }
 });
 

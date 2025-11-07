@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { Separator } from './ui/separator';
+import { Badge } from './ui/badge';
 import {
   Select,
   SelectContent,
@@ -21,14 +22,27 @@ import {
   Calendar as CalendarIcon,
   Clock,
   Lock,
+  Plus,
+  X,
+  Users,
+  Wrench,
+  Building2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner@2.0.3';
+import { z } from 'zod';
 import MarkdownEditor from './MarkdownEditor';
 import TagsInput from './TagsInput';
 import OrganizationSelector from './OrganizationSelector';
 import type { Organization, User } from '../App';
 import type { GigStatus } from './GigListScreen';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  `https://${projectId}.supabase.co`,
+  publicAnonKey
+);
 
 interface CreateGigScreenProps {
   organization: Organization;
@@ -37,6 +51,30 @@ interface CreateGigScreenProps {
   onGigCreated: (gigId: string) => void;
 }
 
+// Zod validation schema
+const gigSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(200, 'Title must be less than 200 characters'),
+  date: z.date({ required_error: 'Date is required' }),
+  start_time: z.string().min(1, 'Start time is required'),
+  end_time: z.string().min(1, 'End time is required'),
+  timezone: z.string().min(1, 'Timezone is required'),
+  status: z.enum(['DateHold', 'Proposed', 'Booked', 'Completed', 'Cancelled', 'Settled']),
+  amount_paid: z.string().refine((val) => {
+    if (!val.trim()) return true; // Optional field
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, 'Amount must be a positive number'),
+}).refine((data) => {
+  // End time must be after start time
+  if (data.start_time && data.end_time) {
+    return data.end_time > data.start_time;
+  }
+  return true;
+}, {
+  message: 'End time must be after start time',
+  path: ['end_time'],
+});
+
 interface FormData {
   title: string;
   date: Date | undefined;
@@ -44,23 +82,35 @@ interface FormData {
   end_time: string;
   timezone: string;
   status: GigStatus;
-  primary_contact_user_id: string;
-  venue_id: string;
-  act_id: string;
   tags: string[];
   notes: string;
   amount_paid: string;
 }
 
-interface FormErrors {
-  title?: string;
-  date?: string;
-  start_time?: string;
-  end_time?: string;
-  timezone?: string;
-  status?: string;
-  amount_paid?: string;
-  general?: string;
+interface ParticipantData {
+  id: string;
+  organization_id: string;
+  organization: Organization;
+  role: string;
+  status: 'Pending' | 'Confirmed' | 'Declined';
+  notes: string;
+}
+
+interface StaffData {
+  id: string;
+  user_id: string;
+  user_name: string;
+  role: string;
+  rate: string;
+  notes: string;
+}
+
+interface EquipmentData {
+  id: string;
+  equipment_id: string;
+  equipment_name: string;
+  quantity: number;
+  notes: string;
 }
 
 const TIMEZONES = [
@@ -73,13 +123,13 @@ const TIMEZONES = [
   { value: 'Pacific/Honolulu', label: 'Hawaii (HST)' },
 ];
 
-const STATUS_OPTIONS: GigStatus[] = [
-  'DateHold',
-  'Proposed',
-  'Booked',
-  'Completed',
-  'Cancelled',
-  'Settled',
+const STATUS_OPTIONS: { value: GigStatus; label: string }[] = [
+  { value: 'DateHold', label: 'Hold Date' },
+  { value: 'Proposed', label: 'Proposed' },
+  { value: 'Booked', label: 'Booked' },
+  { value: 'Completed', label: 'Completed' },
+  { value: 'Cancelled', label: 'Cancelled' },
+  { value: 'Settled', label: 'Paid' },
 ];
 
 const SUGGESTED_TAGS = [
@@ -97,11 +147,13 @@ const SUGGESTED_TAGS = [
   'Gala',
 ];
 
-// Mock users for primary contact selection
-const MOCK_USERS = [
-  { id: 'u1', name: 'John Smith', email: 'john@example.com', role: 'Manager' },
-  { id: 'u2', name: 'Sarah Johnson', email: 'sarah@example.com', role: 'Admin' },
-  { id: 'u3', name: 'Mike Davis', email: 'mike@example.com', role: 'Staff' },
+const PARTICIPANT_ROLES = [
+  'Sound Provider',
+  'Lighting Provider',
+  'Staging Provider',
+  'Equipment Rental',
+  'Production Company',
+  'Other',
 ];
 
 export default function CreateGigScreen({
@@ -116,119 +168,251 @@ export default function CreateGigScreen({
     start_time: '19:00',
     end_time: '23:00',
     timezone: 'America/Los_Angeles',
-    status: 'Hold Date',
-    primary_contact_user_id: '',
-    venue_id: '',
-    act_id: '',
+    status: 'DateHold',
     tags: [],
     notes: '',
     amount_paid: '',
   });
 
-  const [errors, setErrors] = useState<FormErrors>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Participants
   const [selectedVenue, setSelectedVenue] = useState<Organization | null>(null);
   const [selectedAct, setSelectedAct] = useState<Organization | null>(null);
+  const [additionalParticipants, setAdditionalParticipants] = useState<ParticipantData[]>([]);
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
+
+  // Staff
+  const [staffAssignments, setStaffAssignments] = useState<StaffData[]>([]);
+  const [showAddStaff, setShowAddStaff] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+
+  // Equipment
+  const [equipmentAllocations, setEquipmentAllocations] = useState<EquipmentData[]>([]);
+  const [showAddEquipment, setShowAddEquipment] = useState(false);
+  const [availableEquipment, setAvailableEquipment] = useState<any[]>([]);
+
+  // Load available users for staff assignment
+  useEffect(() => {
+    loadAvailableUsers();
+  }, [organization.id]);
+
+  const loadAvailableUsers = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      // For now, we'll just include the current user
+      // In a full implementation, this would fetch all organization members
+      setAvailableUsers([user]);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  };
 
   const handleInputChange = (field: keyof FormData, value: string | string[] | Date | undefined) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     // Clear error when user starts typing
-    if (errors[field as keyof FormErrors]) {
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (errors[field]) {
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
   };
 
   const validateForm = (): boolean => {
-    const newErrors: FormErrors = {};
-
-    // Required: Title
-    if (!formData.title.trim()) {
-      newErrors.title = 'Gig title is required';
-    } else if (formData.title.trim().length < 1 || formData.title.trim().length > 200) {
-      newErrors.title = 'Title must be between 1 and 200 characters';
-    }
-
-    // Required: Date
-    if (!formData.date) {
-      newErrors.date = 'Date is required';
-    }
-
-    // Required: Start time
-    if (!formData.start_time) {
-      newErrors.start_time = 'Start time is required';
-    }
-
-    // Required: End time
-    if (!formData.end_time) {
-      newErrors.end_time = 'End time is required';
-    } else if (formData.start_time && formData.end_time <= formData.start_time) {
-      newErrors.end_time = 'End time must be after start time';
-    }
-
-    // Required: Timezone
-    if (!formData.timezone) {
-      newErrors.timezone = 'Timezone is required';
-    }
-
-    // Optional: Amount paid validation
-    if (formData.amount_paid.trim()) {
-      const amount = parseFloat(formData.amount_paid);
-      if (isNaN(amount) || amount < 0) {
-        newErrors.amount_paid = 'Please enter a valid positive amount';
+    try {
+      gigSchema.parse(formData);
+      setErrors({});
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const newErrors: Record<string, string> = {};
+        error.errors.forEach((err) => {
+          const path = err.path.join('.');
+          newErrors[path] = err.message;
+        });
+        setErrors(newErrors);
       }
+      return false;
     }
+  };
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  // Participant Management
+  const handleAddParticipant = (org: Organization, role: string) => {
+    const newParticipant: ParticipantData = {
+      id: Math.random().toString(36).substr(2, 9),
+      organization_id: org.id,
+      organization: org,
+      role,
+      status: 'Pending',
+      notes: '',
+    };
+    setAdditionalParticipants([...additionalParticipants, newParticipant]);
+    setShowAddParticipant(false);
+  };
+
+  const handleRemoveParticipant = (id: string) => {
+    setAdditionalParticipants(additionalParticipants.filter(p => p.id !== id));
+  };
+
+  // Staff Management
+  const handleAddStaff = (userId: string, userName: string, role: string) => {
+    const newStaff: StaffData = {
+      id: Math.random().toString(36).substr(2, 9),
+      user_id: userId,
+      user_name: userName,
+      role,
+      rate: '',
+      notes: '',
+    };
+    setStaffAssignments([...staffAssignments, newStaff]);
+    setShowAddStaff(false);
+  };
+
+  const handleRemoveStaff = (id: string) => {
+    setStaffAssignments(staffAssignments.filter(s => s.id !== id));
+  };
+
+  const handleUpdateStaffRate = (id: string, rate: string) => {
+    setStaffAssignments(staffAssignments.map(s => 
+      s.id === id ? { ...s, rate } : s
+    ));
+  };
+
+  // Equipment Management
+  const handleAddEquipment = (equipmentId: string, equipmentName: string) => {
+    const newEquipment: EquipmentData = {
+      id: Math.random().toString(36).substr(2, 9),
+      equipment_id: equipmentId,
+      equipment_name: equipmentName,
+      quantity: 1,
+      notes: '',
+    };
+    setEquipmentAllocations([...equipmentAllocations, newEquipment]);
+    setShowAddEquipment(false);
+  };
+
+  const handleRemoveEquipment = (id: string) => {
+    setEquipmentAllocations(equipmentAllocations.filter(e => e.id !== id));
+  };
+
+  const handleUpdateEquipmentQuantity = (id: string, quantity: number) => {
+    setEquipmentAllocations(equipmentAllocations.map(e => 
+      e.id === id ? { ...e, quantity } : e
+    ));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) {
+      toast.error('Please fix the form errors');
       return;
     }
 
     setIsSubmitting(true);
     setErrors({});
 
-    // Simulate API call
-    setTimeout(() => {
-      // Simulate error (5% chance)
-      if (Math.random() < 0.05) {
-        setErrors({ general: 'Failed to create gig. Please try again.' });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        setErrors({ general: 'Not authenticated. Please sign in again.' });
         setIsSubmitting(false);
         return;
       }
 
-      // Success
-      const newGigId = Math.random().toString(36).substr(2, 9);
+      // Combine date and time into ISO DateTime strings
+      const startDateTime = new Date(formData.date!);
+      const [startHours, startMinutes] = formData.start_time.split(':');
+      startDateTime.setHours(parseInt(startHours), parseInt(startMinutes), 0, 0);
+
+      const endDateTime = new Date(formData.date!);
+      const [endHours, endMinutes] = formData.end_time.split(':');
+      endDateTime.setHours(parseInt(endHours), parseInt(endMinutes), 0, 0);
+
+      // If end time is before start time, assume it's the next day
+      if (endDateTime < startDateTime) {
+        endDateTime.setDate(endDateTime.getDate() + 1);
+      }
+
+      // Prepare gig data
+      const gigData = {
+        organization_id: organization.id,
+        title: formData.title.trim(),
+        start: startDateTime.toISOString(),
+        end: endDateTime.toISOString(),
+        timezone: formData.timezone,
+        status: formData.status,
+        tags: formData.tags,
+        notes: formData.notes.trim() || null,
+        amount_paid: formData.amount_paid.trim() ? parseFloat(formData.amount_paid) : null,
+        venue_id: selectedVenue?.id || null,
+        act_id: selectedAct?.id || null,
+        participants: additionalParticipants.map(p => ({
+          organization_id: p.organization_id,
+          role: p.role,
+          status: p.status,
+          notes: p.notes || null,
+        })),
+        staff: staffAssignments.map(s => ({
+          user_id: s.user_id,
+          role: s.role,
+          rate: s.rate ? parseFloat(s.rate) : null,
+          notes: s.notes || null,
+        })),
+        equipment: equipmentAllocations.map(e => ({
+          equipment_id: e.equipment_id,
+          quantity: e.quantity,
+          notes: e.notes || null,
+        })),
+      };
+
+      // Create gig via server endpoint
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/gigs`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(gigData),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create gig');
+      }
+
+      const newGig = await response.json();
+
       toast.success('Gig created successfully!');
-      onGigCreated(newGigId);
-    }, 1500);
-  };
-
-  const handleVenueSelect = (org: Organization) => {
-    setSelectedVenue(org);
-    setFormData((prev) => ({ ...prev, venue_id: org.id }));
-  };
-
-  const handleActSelect = (org: Organization) => {
-    setSelectedAct(org);
-    setFormData((prev) => ({ ...prev, act_id: org.id }));
+      onGigCreated(newGig.id);
+    } catch (err: any) {
+      console.error('Error creating gig:', err);
+      setErrors({ general: err.message || 'Failed to create gig. Please try again.' });
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="sm"
               onClick={onCancel}
               className="text-gray-600 hover:text-gray-900"
+              disabled={isSubmitting}
             >
               <ChevronLeft className="w-5 h-5 mr-1" />
               Back
@@ -242,21 +426,21 @@ export default function CreateGigScreen({
       </div>
 
       {/* Main Content */}
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Card className="p-6 sm:p-8">
-          <form onSubmit={handleSubmit}>
-            {/* General Error */}
-            {errors.general && (
-              <Alert variant="destructive" className="mb-6">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{errors.general}</AlertDescription>
-              </Alert>
-            )}
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <form onSubmit={handleSubmit}>
+          {/* General Error */}
+          {errors.general && (
+            <Alert variant="destructive" className="mb-6">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{errors.general}</AlertDescription>
+            </Alert>
+          )}
 
-            {/* Section 1: Basic Information */}
-            <div className="space-y-6 mb-8">
-              <h3 className="text-gray-900">Basic Information</h3>
+          {/* Section 1: Basic Information */}
+          <Card className="p-6 sm:p-8 mb-6">
+            <h3 className="text-gray-900 mb-6">Basic Information</h3>
 
+            <div className="space-y-6">
               {/* Title */}
               <div className="space-y-2">
                 <Label htmlFor="title">
@@ -407,49 +591,29 @@ export default function CreateGigScreen({
                   </SelectTrigger>
                   <SelectContent>
                     {STATUS_OPTIONS.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {status}
+                      <SelectItem key={status.value} value={status.value}>
+                        {status.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+          </Card>
 
-            {/* Section 2: Participants */}
-            <div className="space-y-6 mb-8 pt-8 border-t border-gray-200">
+          {/* Section 2: Participants */}
+          <Card className="p-6 sm:p-8 mb-6">
+            <div className="flex items-center gap-2 mb-6">
+              <Building2 className="w-5 h-5 text-gray-600" />
               <h3 className="text-gray-900">Participants</h3>
+            </div>
 
-              {/* Primary Contact */}
-              <div className="space-y-2">
-                <Label htmlFor="primary_contact">Primary Contact</Label>
-                <Select
-                  value={formData.primary_contact_user_id}
-                  onValueChange={(value) => handleInputChange('primary_contact_user_id', value)}
-                  disabled={isSubmitting}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select primary contact" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MOCK_USERS.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        <div>
-                          <div>{u.name}</div>
-                          <div className="text-xs text-gray-500">{u.email} • {u.role}</div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-sm text-gray-500">Person responsible for this gig</p>
-              </div>
-
+            <div className="space-y-6">
               {/* Venue */}
               <div className="space-y-2">
                 <Label htmlFor="venue">Venue</Label>
                 <OrganizationSelector
-                  onSelect={handleVenueSelect}
+                  onSelect={setSelectedVenue}
                   selectedOrganization={selectedVenue}
                   organizationType="Venue"
                   placeholder="Search for venue..."
@@ -461,30 +625,264 @@ export default function CreateGigScreen({
               <div className="space-y-2">
                 <Label htmlFor="act">Act</Label>
                 <OrganizationSelector
-                  onSelect={handleActSelect}
+                  onSelect={setSelectedAct}
                   selectedOrganization={selectedAct}
                   organizationType="Act"
                   placeholder="Search for act..."
                   disabled={isSubmitting}
                 />
               </div>
+
+              {/* Additional Participants */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Additional Participants</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAddParticipant(true)}
+                    disabled={isSubmitting}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Participant
+                  </Button>
+                </div>
+
+                {additionalParticipants.length > 0 && (
+                  <div className="space-y-2">
+                    {additionalParticipants.map((participant) => (
+                      <div
+                        key={participant.id}
+                        className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg"
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-900">{participant.organization.name}</p>
+                          <p className="text-xs text-gray-500">{participant.role}</p>
+                        </div>
+                        <Badge variant="outline">{participant.status}</Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveParticipant(participant.id)}
+                          disabled={isSubmitting}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {showAddParticipant && (
+                  <Card className="p-4 bg-gray-50">
+                    <p className="text-sm text-gray-600 mb-3">
+                      Add sound, lighting, staging, or other production companies to this gig
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAddParticipant(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Use organization selector to add participants (feature coming soon)
+                    </p>
+                  </Card>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Section 3: Staff Assignments */}
+          <Card className="p-6 sm:p-8 mb-6">
+            <div className="flex items-center gap-2 mb-6">
+              <Users className="w-5 h-5 text-gray-600" />
+              <h3 className="text-gray-900">Staff Assignments</h3>
             </div>
 
-            {/* Section 3: Additional Information */}
-            <div className="pt-8 mb-8">
-              <Separator className="mb-6" />
-
-              <div className="flex items-start gap-2 mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-amber-900">
-                    <strong>Private to your organization:</strong> Tags, notes, and financial information below are only visible to members of your organization.
-                  </p>
-                </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                  Assign staff members to this gig
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddStaff(true)}
+                  disabled={isSubmitting}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Staff
+                </Button>
               </div>
 
+              {staffAssignments.length > 0 && (
+                <div className="space-y-2">
+                  {staffAssignments.map((staff) => (
+                    <div
+                      key={staff.id}
+                      className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-900">{staff.user_name}</p>
+                        <p className="text-xs text-gray-500">{staff.role}</p>
+                      </div>
+                      <div className="w-32">
+                        <Input
+                          type="number"
+                          placeholder="Rate"
+                          value={staff.rate}
+                          onChange={(e) => handleUpdateStaffRate(staff.id, e.target.value)}
+                          className="text-sm"
+                          disabled={isSubmitting}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveStaff(staff.id)}
+                        disabled={isSubmitting}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showAddStaff && (
+                <Card className="p-4 bg-gray-50">
+                  <p className="text-sm text-gray-600 mb-3">
+                    Select staff member and role
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // Add current user as an example
+                        handleAddStaff(user.id, `${user.first_name} ${user.last_name}`, 'Staff');
+                      }}
+                    >
+                      Add Me
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAddStaff(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Full staff roster integration coming soon
+                  </p>
+                </Card>
+              )}
+            </div>
+          </Card>
+
+          {/* Section 4: Equipment */}
+          <Card className="p-6 sm:p-8 mb-6">
+            <div className="flex items-center gap-2 mb-6">
+              <Wrench className="w-5 h-5 text-gray-600" />
+              <h3 className="text-gray-900">Equipment Allocation</h3>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                  Allocate equipment to this gig
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddEquipment(true)}
+                  disabled={isSubmitting}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Equipment
+                </Button>
+              </div>
+
+              {equipmentAllocations.length > 0 && (
+                <div className="space-y-2">
+                  {equipmentAllocations.map((equipment) => (
+                    <div
+                      key={equipment.id}
+                      className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-900">{equipment.equipment_name}</p>
+                      </div>
+                      <div className="w-24">
+                        <Input
+                          type="number"
+                          min="1"
+                          placeholder="Qty"
+                          value={equipment.quantity}
+                          onChange={(e) => handleUpdateEquipmentQuantity(equipment.id, parseInt(e.target.value) || 1)}
+                          className="text-sm"
+                          disabled={isSubmitting}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveEquipment(equipment.id)}
+                        disabled={isSubmitting}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showAddEquipment && (
+                <Card className="p-4 bg-gray-50">
+                  <p className="text-sm text-gray-600 mb-3">
+                    Equipment management will be available once equipment is added to your organization
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAddEquipment(false)}
+                  >
+                    Cancel
+                  </Button>
+                </Card>
+              )}
+            </div>
+          </Card>
+
+          {/* Section 5: Additional Information */}
+          <Card className="p-6 sm:p-8 mb-6">
+            <div className="flex items-start gap-2 mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-amber-900">
+                  <strong>Private to your organization:</strong> Tags, notes, and financial information below are only visible to members of your organization.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
               {/* Tags */}
-              <div className="space-y-2 mb-6">
+              <div className="space-y-2">
                 <Label htmlFor="tags">Tags</Label>
                 <TagsInput
                   value={formData.tags}
@@ -497,7 +895,7 @@ export default function CreateGigScreen({
               </div>
 
               {/* Amount Paid */}
-              <div className="space-y-2 mb-6">
+              <div className="space-y-2">
                 <Label htmlFor="amount_paid">Amount Paid</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
@@ -536,35 +934,35 @@ export default function CreateGigScreen({
                 <p className="text-sm text-gray-500">Supports Markdown formatting for rich text</p>
               </div>
             </div>
+          </Card>
 
-            {/* Form Actions */}
-            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-6 border-t border-gray-200">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onCancel}
-                disabled={isSubmitting}
-                className="sm:w-auto"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="bg-sky-500 hover:bg-sky-600 text-white sm:ml-auto"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating Gig...
-                  </>
-                ) : (
-                  'Create Gig'
-                )}
-              </Button>
-            </div>
-          </form>
-        </Card>
+          {/* Form Actions */}
+          <div className="flex flex-col-reverse sm:flex-row gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isSubmitting}
+              className="sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-sky-500 hover:bg-sky-600 text-white sm:ml-auto"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating Gig...
+                </>
+              ) : (
+                'Create Gig'
+              )}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );
