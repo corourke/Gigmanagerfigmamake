@@ -115,7 +115,6 @@ Companies, venues, acts, and other entities
 | updated_at | TIMESTAMPTZ | Record last update timestamp |
 
 **Notes:**
-- Primary contact information stored as organization-private data in `org_annotations`
 - Ownership/editing permissions controlled via `OrganizationMember` with Admin role
 - All authenticated users may read organizations, but only Admin members can modify
 
@@ -375,12 +374,8 @@ Junction table linking gigs to assigned kits
 
 - Each first-class entity owned by the tenant has `organization_id` for RLS and filtering
 - Gigs are shared (participated in) by multiple organizations so there is no 'owning' organization
-- Kit assignments are scoped to organizations via `organization_id` in `gig_kit_assignments`
 - Organizations are editable only by their Admin members (via `OrganizationMember` with `Admin` role)
 - Gigs link to organizations via `gig_participants` with a `role` using OrganizationType enum values
-
-- Tenant organizations can attach private notes/tags (scoped to the creating organization) to any organization via `org_annotations`
-- Primary contact information for organizations is stored as organization-private data in `org_annotations`
 
 - All Notes fields store Markdown-formatted text
 - Gig status transitions recorded in `gig_status_history` for auditability
@@ -475,6 +470,5 @@ All database enum types are defined in Prisma schema and used as the single sour
 
 ## Related Documentation
 
-- **API Endpoints**: See API.md for endpoint specifications
 - **Requirements**: See REQUIREMENTS.md for feature requirements
 - **Tech Stack**: See TECH_STACK.md for technology details

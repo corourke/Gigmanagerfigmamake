@@ -901,7 +901,6 @@ export function GigForm() {
 
 ## Related Documentation
 
-- **API Endpoints**: See API.md for endpoint specifications
 - **Database Schema**: See DATABASE.md for data model
 - **Requirements**: See ../REQUIREMENTS.md for feature requirements
 - **Tech Stack**: See ../TECH_STACK.md for technology details

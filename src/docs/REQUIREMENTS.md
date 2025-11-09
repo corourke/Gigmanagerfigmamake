@@ -88,17 +88,6 @@ This app streamlines the management of gigs (where an act performs at a venue) f
 - All tenant-authored data is isolated using that tenant's `organization_id`
 - Roles per tenant (Admin, Manager, Staff, Viewer) control CRUD on tenant-private data
 
-#### Organization Types
-
-- **Production Company** - Matches clients to venues and bands, prime contractor for gigs
-- **Sound/Lighting Company** - Provides sound reinforcement and lighting equipment
-- **Client** - Individual or corporate entity booking events
-- **Venue** - Location where events occur (bar, restaurant, concert hall, etc.)
-- **Act** - Solo musician, band, or performance act
-- **Rental Company** - Provides supplemental equipment
-- **Staging Company** - Stage construction and setup
-- **Agency** - Booking and talent agencies
-
 #### Access Control
 
 **User Roles (per organization):**
@@ -418,6 +407,5 @@ Most tools cover 2-3 features but require combining multiple apps to replicate o
 ## Related Documentation
 
 - **Database Schema**: See SPECIFICATIONS/DATABASE.md
-- **API Endpoints**: See SPECIFICATIONS/API.md
 - **User Flows**: See SPECIFICATIONS/UI_FLOWS.md
 - **Tech Stack**: See TECH_STACK.md
