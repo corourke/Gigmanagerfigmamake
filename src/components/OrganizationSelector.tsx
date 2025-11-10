@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
@@ -6,124 +6,28 @@ import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from '.
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Search, X, Building2, MapPin, Loader2 } from 'lucide-react';
 import type { Organization, OrganizationType } from '../App';
+import { createClient } from '../utils/supabase/client';
+import { projectId } from '../utils/supabase/info';
+
+const supabase = createClient();
 
 interface OrganizationSelectorProps {
-  onSelect: (org: Organization) => void;
+  onSelect: (org: Organization | null) => void;
   selectedOrganization: Organization | null;
   organizationType?: OrganizationType;
   placeholder?: string;
   disabled?: boolean;
 }
 
-// Mock organization data for search
-const MOCK_ORGANIZATIONS: Organization[] = [
-  {
-    id: 'v1',
-    name: 'Central Park Amphitheater',
-    type: 'Venue',
-    city: 'Los Angeles',
-    state: 'CA',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'v2',
-    name: 'Grand Ballroom Hotel',
-    type: 'Venue',
-    city: 'New York',
-    state: 'NY',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'v3',
-    name: 'Lakeside Garden Venue',
-    type: 'Venue',
-    city: 'Chicago',
-    state: 'IL',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'v4',
-    name: 'The Blue Note Jazz Club',
-    type: 'Venue',
-    city: 'New York',
-    state: 'NY',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'v5',
-    name: 'Metropolitan Center',
-    type: 'Venue',
-    city: 'Chicago',
-    state: 'IL',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'v6',
-    name: 'Red Rocks Amphitheatre',
-    type: 'Venue',
-    city: 'Morrison',
-    state: 'CO',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'a1',
-    name: 'The Midnight Riders',
-    type: 'Act',
-    city: 'Nashville',
-    state: 'TN',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'a2',
-    name: 'Sarah Johnson Quartet',
-    type: 'Act',
-    city: 'New York',
-    state: 'NY',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'a3',
-    name: 'Electric Storm Band',
-    type: 'Act',
-    city: 'Los Angeles',
-    state: 'CA',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'a4',
-    name: 'Classical Strings Ensemble',
-    type: 'Act',
-    city: 'Boston',
-    state: 'MA',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-  {
-    id: 'a5',
-    name: 'DJ Velocity',
-    type: 'Act',
-    city: 'Miami',
-    state: 'FL',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
-  },
-];
-
 const TYPE_CONFIG: Record<OrganizationType, { label: string; color: string }> = {
-  ProductionCompany: { label: 'Production Company', color: 'bg-purple-100 text-purple-700' },
-  SoundLightingCompany: { label: 'Sound & Lighting', color: 'bg-orange-100 text-orange-700' },
-  RentalCompany: { label: 'Rental Company', color: 'bg-blue-100 text-blue-700' },
+  Production: { label: 'Production', color: 'bg-purple-100 text-purple-700' },
+  Sound: { label: 'Sound', color: 'bg-orange-100 text-orange-700' },
+  Lighting: { label: 'Lighting', color: 'bg-yellow-100 text-yellow-700' },
+  Staging: { label: 'Staging', color: 'bg-indigo-100 text-indigo-700' },
+  Rentals: { label: 'Rentals', color: 'bg-blue-100 text-blue-700' },
   Venue: { label: 'Venue', color: 'bg-green-100 text-green-700' },
   Act: { label: 'Act', color: 'bg-pink-100 text-pink-700' },
+  Agency: { label: 'Agency', color: 'bg-teal-100 text-teal-700' },
 };
 
 export default function OrganizationSelector({
@@ -139,7 +43,7 @@ export default function OrganizationSelector({
   const [searchResults, setSearchResults] = useState<Organization[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleSearch = (query: string) => {
+  const handleSearch = async (query: string) => {
     setSearchQuery(query);
     
     if (!query.trim()) {
@@ -149,24 +53,39 @@ export default function OrganizationSelector({
 
     setIsSearching(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      const lowerQuery = query.toLowerCase();
-      const results = MOCK_ORGANIZATIONS.filter((org) => {
-        // Filter by type if specified
-        if (organizationType && org.type !== organizationType) {
-          return false;
-        }
-        // Search by name or location
-        return (
-          org.name.toLowerCase().includes(lowerQuery) ||
-          org.city?.toLowerCase().includes(lowerQuery) ||
-          org.state?.toLowerCase().includes(lowerQuery)
-        );
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setIsSearching(false);
+        return;
+      }
+
+      // Use server endpoint to search organizations (bypasses RLS issues)
+      let url = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/organizations?search=${encodeURIComponent(query)}`;
+      
+      if (organizationType) {
+        url += `&type=${encodeURIComponent(organizationType)}`;
+      }
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
       });
-      setSearchResults(results);
+
+      if (!response.ok) {
+        console.error('Error searching organizations');
+        setSearchResults([]);
+      } else {
+        const data = await response.json();
+        setSearchResults(data || []);
+      }
+    } catch (error) {
+      console.error('Error searching organizations:', error);
+      setSearchResults([]);
+    } finally {
       setIsSearching(false);
-    }, 300);
+    }
   };
 
   const handleSelectOrganization = (org: Organization) => {

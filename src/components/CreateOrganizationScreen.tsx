@@ -1,39 +1,7 @@
-import { useState, useRef } from 'react';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Card } from './ui/card';
-import { Alert, AlertDescription } from './ui/alert';
-import { Badge } from './ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
-import { 
-  Building2, 
-  AlertCircle, 
-  Loader2, 
-  ChevronLeft, 
-  Search,
-  MapPin,
-  Phone,
-  Globe,
-  X,
-  Check
-} from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import MarkdownEditor from './MarkdownEditor';
 import type { Organization, OrganizationType } from '../App';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '../utils/supabase/client';
 
-const supabase = createClient(
-  `https://${projectId}.supabase.co`,
-  publicAnonKey
-);
+const supabase = createClient();
 
 interface CreateOrganizationScreenProps {
   onOrganizationCreated: (org: Organization) => void;

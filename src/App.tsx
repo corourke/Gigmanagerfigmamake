@@ -157,17 +157,18 @@ function App() {
   };
 
   const handleCreateGig = () => {
+    setSelectedGigId(null); // Clear selected gig when creating new
     setCurrentRoute('create-gig');
   };
 
   const handleViewGig = (gigId: string) => {
     setSelectedGigId(gigId);
-    setCurrentRoute('gig-detail');
+    setCurrentRoute('create-gig'); // Use create-gig route for editing too
   };
 
   const handleGigCreated = (gigId: string) => {
     setSelectedGigId(gigId);
-    setCurrentRoute('gig-detail');
+    setCurrentRoute('gig-list'); // Navigate back to gig list instead of gig detail
   };
 
   const handleBackToDashboard = () => {
@@ -244,8 +245,11 @@ function App() {
           organization={selectedOrganization}
           user={currentUser}
           userRole={getCurrentUserRole()}
+          gigId={selectedGigId} // Pass gigId for edit mode
           onCancel={handleBackToGigList}
           onGigCreated={handleGigCreated}
+          onGigUpdated={handleBackToGigList} // After updating, go back to list
+          onGigDeleted={handleBackToGigList} // After deleting, go back to list
           onNavigateToDashboard={handleBackToDashboard}
           onNavigateToGigs={handleBackToGigList}
           onSwitchOrganization={handleBackToSelection}

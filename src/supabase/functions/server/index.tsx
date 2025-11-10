@@ -187,6 +187,41 @@ app.put("/make-server-de012ad4/users/:id", async (c) => {
   }
 });
 
+// Search users (for staff assignment)
+app.get("/make-server-de012ad4/users", async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const { user, error: authError } = await getAuthenticatedUser(authHeader);
+  
+  if (authError || !user) {
+    return c.json({ error: authError ?? 'Unauthorized' }, 401);
+  }
+
+  const search = c.req.query('search'); // Search by name or email
+
+  try {
+    let query = supabaseAdmin
+      .from('users')
+      .select('*')
+      .order('first_name');
+
+    if (search) {
+      query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
+    }
+
+    const { data, error } = await query.limit(20);
+
+    if (error) {
+      console.error('Error searching users:', error);
+      return c.json({ error: error.message }, 400);
+    }
+
+    return c.json(data);
+  } catch (error) {
+    console.error('Error in users search:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // ===== Organization Management =====
 
 // Get user's organizations
@@ -333,6 +368,7 @@ app.get("/make-server-de012ad4/organizations", async (c) => {
   }
 
   const type = c.req.query('type'); // Optional filter by type
+  const search = c.req.query('search'); // Optional search by name
 
   try {
     let query = supabaseAdmin
@@ -344,7 +380,11 @@ app.get("/make-server-de012ad4/organizations", async (c) => {
       query = query.eq('type', type);
     }
 
-    const { data, error } = await query;
+    if (search) {
+      query = query.ilike('name', `%${search}%`);
+    }
+
+    const { data, error } = await query.limit(20);
 
     if (error) {
       console.error('Error fetching organizations:', error);
@@ -528,6 +568,7 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       act_id, 
       participants = [],
       staff = [],
+      staff_slots = [], // New format with nested assignments
       equipment = [],
       ...gigData 
     } = body;
@@ -614,22 +655,84 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       }
     }
 
-    // Create staff slots (updated to use new schema with organization_id)
-    if (staff.length > 0) {
-      const staffSlotsToInsert = staff.map((s: any) => ({
-        gig_id: gig.id,
-        organization_id: s.organization_id || primary_organization_id,
-        staff_role_id: s.staff_role_id,
-        required_count: s.required_count || 1,
-        notes: s.notes || null,
-      }));
-
-      const { error: staffError } = await supabaseAdmin
-        .from('gig_staff_slots')
-        .insert(staffSlotsToInsert);
-      
-      if (staffError) {
-        console.error('Error creating staff slots:', staffError);
+    // Create staff slots - support both old format (staff) and new format (staff_slots)
+    const staffData = staff_slots.length > 0 ? staff_slots : staff;
+    
+    if (staffData.length > 0) {
+      for (const slot of staffData) {
+        // First, we need to get or create the staff_role_id from the role name
+        let staffRoleId = null;
+        
+        if (slot.role) {
+          // Try to find existing role
+          const { data: existingRole } = await supabaseAdmin
+            .from('staff_roles')
+            .select('id')
+            .eq('name', slot.role)
+            .maybeSingle();
+          
+          staffRoleId = existingRole?.id;
+          
+          // If role doesn't exist, create it
+          if (!staffRoleId) {
+            const { data: newRole, error: roleError } = await supabaseAdmin
+              .from('staff_roles')
+              .insert({ name: slot.role })
+              .select('id')
+              .single();
+            
+            if (!roleError && newRole) {
+              staffRoleId = newRole.id;
+            }
+          }
+        }
+        
+        if (!staffRoleId) {
+          console.error('Could not create or find staff role for:', slot.role);
+          continue;
+        }
+        
+        // Insert the staff slot
+        const { data: createdSlot, error: slotError } = await supabaseAdmin
+          .from('gig_staff_slots')
+          .insert({
+            gig_id: gig.id,
+            organization_id: slot.organization_id || primary_organization_id,
+            staff_role_id: staffRoleId,
+            required_count: slot.count || slot.required_count || 1,
+            notes: slot.notes || null,
+          })
+          .select()
+          .single();
+        
+        if (slotError) {
+          console.error('Error creating staff slot:', slotError);
+          continue;
+        }
+        
+        // Create staff assignments for this slot
+        if (slot.assignments && slot.assignments.length > 0) {
+          const assignmentsToInsert = slot.assignments
+            .filter((a: any) => a.user_id) // Only create if user is assigned
+            .map((a: any) => ({
+              gig_staff_slot_id: createdSlot.id,
+              user_id: a.user_id,
+              status: a.status || 'Requested',
+              rate: a.rate || null,
+              fee: a.fee || null,
+              notes: a.notes || null,
+            }));
+          
+          if (assignmentsToInsert.length > 0) {
+            const { error: assignmentsError } = await supabaseAdmin
+              .from('gig_staff_assignments')
+              .insert(assignmentsToInsert);
+            
+            if (assignmentsError) {
+              console.error('Error creating staff assignments:', assignmentsError);
+            }
+          }
+        }
       }
     }
 
