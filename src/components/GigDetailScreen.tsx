@@ -1,6 +1,7 @@
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
+import AppHeader from './AppHeader';
 import { ChevronLeft, Calendar, Clock, MapPin, User, Tag } from 'lucide-react';
 import type { Organization, User } from '../App';
 import type { Gig } from './GigListScreen';
@@ -61,6 +62,16 @@ export default function GigDetailScreen({
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
+      <AppHeader
+        organization={organization}
+        user={user}
+        currentRoute="gig-detail"
+        onNavigateToDashboard={onBack}
+        onNavigateToGigs={onBack}
+        onLogout={() => {}}
+      />
+
+      {/* Page Title Bar */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">

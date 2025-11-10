@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { Card } from './ui/card';
 import { createClient } from '../utils/supabase/client';
 import * as api from '../utils/api';
+import AppHeader from './AppHeader';
 import {
   Select,
   SelectContent,
@@ -607,23 +608,21 @@ export default function GigListScreen({
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
+      <AppHeader
+        organization={organization}
+        user={user}
+        currentRoute="gig-list"
+        onNavigateToDashboard={onBack}
+        onNavigateToGigs={() => {}}
+        onLogout={() => {}}
+      />
+
+      {/* Page Title and Actions Bar */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onBack}
-                className="text-gray-600 hover:text-gray-900"
-              >
-                <ChevronLeft className="w-5 h-5 mr-1" />
-                Back
-              </Button>
-              <div>
-                <h1 className="text-gray-900">Gigs</h1>
-                <p className="text-sm text-gray-600">{organization.name}</p>
-              </div>
+            <div>
+              <h1 className="text-gray-900">Gigs</h1>
             </div>
             <Button
               onClick={onCreateGig}

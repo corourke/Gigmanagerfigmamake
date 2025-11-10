@@ -61,15 +61,15 @@ export default function AppHeader({
     <div className="bg-white border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Top Bar */}
-        <div className="flex items-center justify-between h-16 border-b border-gray-100">
-          {/* Organization Info */}
+        <div className="flex items-center justify-between h-16">
+          {/* Organization Info or App Title */}
           <div className="flex items-center gap-4">
             <div className="inline-flex items-center justify-center w-10 h-10 bg-sky-500 rounded-lg">
               <Building2 className="w-6 h-6 text-white" />
             </div>
             <div>
               <h2 className="text-gray-900">{organization?.name || 'Gig Manager'}</h2>
-              {userRole && (
+              {userRole && organization && (
                 <Badge className={`text-xs ${ROLE_CONFIG[userRole].color}`} variant="outline">
                   {userRole}
                 </Badge>
@@ -79,7 +79,7 @@ export default function AppHeader({
 
           {/* User Menu */}
           <div className="flex items-center gap-3">
-            {onSwitchOrganization && (
+            {onSwitchOrganization && organization && (
               <Button
                 variant="outline"
                 size="sm"
@@ -110,7 +110,7 @@ export default function AppHeader({
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {onSwitchOrganization && (
+                {onSwitchOrganization && organization && (
                   <DropdownMenuItem onClick={onSwitchOrganization}>
                     <SwitchCamera className="w-4 h-4 mr-2" />
                     Switch Organization
@@ -130,45 +130,47 @@ export default function AppHeader({
           </div>
         </div>
 
-        {/* Navigation Bar */}
-        <nav className="flex items-center gap-1 h-12">
-          <button 
-            onClick={onNavigateToDashboard}
-            className={`px-4 py-2 text-sm rounded-lg transition-colors flex items-center gap-2 ${
-              currentRoute === 'dashboard'
-                ? 'text-sky-600 bg-sky-50'
-                : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            Dashboard
-          </button>
-          <button 
-            onClick={onNavigateToGigs}
-            className={`px-4 py-2 text-sm rounded-lg transition-colors flex items-center gap-2 ${
-              currentRoute === 'gig-list' || currentRoute === 'create-gig' || currentRoute === 'gig-detail'
-                ? 'text-sky-600 bg-sky-50'
-                : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            Events
-          </button>
-          <button 
-            onClick={onNavigateToTeam}
-            className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
-          >
-            <Users className="w-4 h-4" />
-            Team
-          </button>
-          <button 
-            onClick={onNavigateToEquipment}
-            className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
-          >
-            <Package className="w-4 h-4" />
-            Equipment
-          </button>
-        </nav>
+        {/* Navigation Bar - Only show if organization exists */}
+        {organization && (
+          <nav className="flex items-center gap-1 h-12">
+            <button 
+              onClick={onNavigateToDashboard}
+              className={`px-4 py-2 text-sm rounded-lg transition-colors flex items-center gap-2 ${
+                currentRoute === 'dashboard'
+                  ? 'text-sky-600 bg-sky-50'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard
+            </button>
+            <button 
+              onClick={onNavigateToGigs}
+              className={`px-4 py-2 text-sm rounded-lg transition-colors flex items-center gap-2 ${
+                currentRoute === 'gig-list' || currentRoute === 'create-gig' || currentRoute === 'gig-detail'
+                  ? 'text-sky-600 bg-sky-50'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              Events
+            </button>
+            <button 
+              onClick={onNavigateToTeam}
+              className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Users className="w-4 h-4" />
+              Team
+            </button>
+            <button 
+              onClick={onNavigateToEquipment}
+              className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Package className="w-4 h-4" />
+              Equipment
+            </button>
+          </nav>
+        )}
       </div>
     </div>
   );

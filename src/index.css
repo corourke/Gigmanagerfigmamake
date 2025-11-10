@@ -1365,10 +1365,6 @@
     border-color: var(--color-emerald-300);
   }
 
-  .border-gray-100 {
-    border-color: var(--color-gray-100);
-  }
-
   .border-gray-200 {
     border-color: var(--color-gray-200);
   }
@@ -2686,12 +2682,6 @@
   @media (width >= 40rem) {
     .sm\:ml-auto {
       margin-left: auto;
-    }
-  }
-
-  @media (width >= 40rem) {
-    .sm\:block {
-      display: block;
     }
   }
 

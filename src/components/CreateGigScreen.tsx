@@ -6,6 +6,7 @@ import { Card } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
+import AppHeader from './AppHeader';
 import {
   Select,
   SelectContent,
@@ -402,6 +403,16 @@ export default function CreateGigScreen({
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
+      <AppHeader
+        organization={organization}
+        user={user}
+        currentRoute="create-gig"
+        onNavigateToDashboard={onCancel}
+        onNavigateToGigs={onCancel}
+        onLogout={() => {}}
+      />
+
+      {/* Page Title Bar */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center gap-3">
@@ -417,7 +428,6 @@ export default function CreateGigScreen({
             </Button>
             <div>
               <h1 className="text-gray-900">Create New Gig</h1>
-              <p className="text-sm text-gray-600">{organization.name}</p>
             </div>
           </div>
         </div>

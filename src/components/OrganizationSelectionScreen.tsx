@@ -1,11 +1,9 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { Skeleton } from './ui/skeleton';
-import { Alert, AlertDescription } from './ui/alert';
+import AppHeader from './AppHeader';
 import {
   Search,
   Plus,
@@ -196,31 +194,11 @@ export default function OrganizationSelectionScreen({
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="inline-flex items-center justify-center w-10 h-10 bg-sky-500 rounded-lg">
-                <Building2 className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-gray-900">Gig Manager</span>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <Avatar className="w-10 h-10">
-                <AvatarImage src={user.avatar_url} alt={`${user.first_name} ${user.last_name}`} />
-                <AvatarFallback className="bg-sky-100 text-sky-700">
-                  {getInitials(user.first_name, user.last_name)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="hidden sm:block">
-                <p className="text-sm text-gray-900">{user.first_name} {user.last_name}</p>
-                <p className="text-xs text-gray-500">{user.email}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AppHeader 
+        user={user} 
+        currentRoute="dashboard"
+        onLogout={() => {}}
+      />
 
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
