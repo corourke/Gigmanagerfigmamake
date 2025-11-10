@@ -388,21 +388,30 @@ app.get("/make-server-de012ad4/gigs", async (c) => {
       return c.json({ error: 'Access denied to this organization' }, 403);
     }
 
-    // Fetch gigs
-    const { data: gigs, error } = await supabaseAdmin
-      .from('gigs')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .order('start', { ascending: false });
+    // Fetch gigs where this organization is a participant
+    const { data: gigParticipants, error } = await supabaseAdmin
+      .from('gig_participants')
+      .select('*, gig:gigs(*)')
+      .eq('organization_id', organizationId);
 
     if (error) {
       console.error('Error fetching gigs:', error);
       return c.json({ error: error.message }, 400);
     }
 
-    // For each gig, fetch participants
+    // Extract unique gigs and fetch additional participants for each
+    const gigsMap = new Map();
+    for (const gp of gigParticipants || []) {
+      if (gp.gig) {
+        gigsMap.set(gp.gig.id, gp.gig);
+      }
+    }
+
+    const gigs = Array.from(gigsMap.values());
+
+    // For each gig, fetch all participants
     const gigsWithParticipants = await Promise.all(
-      (gigs || []).map(async (gig) => {
+      gigs.map(async (gig) => {
         const { data: participants } = await supabaseAdmin
           .from('gig_participants')
           .select('*, organization:organization_id(*)')
@@ -418,6 +427,11 @@ app.get("/make-server-de012ad4/gigs", async (c) => {
           act,
         };
       })
+    );
+
+    // Sort by start date descending
+    gigsWithParticipants.sort((a, b) => 
+      new Date(b.start).getTime() - new Date(a.start).getTime()
     );
 
     return c.json(gigsWithParticipants);
@@ -450,12 +464,24 @@ app.get("/make-server-de012ad4/gigs/:id", async (c) => {
       return c.json({ error: error.message }, 400);
     }
 
-    // Verify user has access to this gig's organization
+    // Verify user has access through gig participants
+    const { data: gigParticipants } = await supabaseAdmin
+      .from('gig_participants')
+      .select('organization_id')
+      .eq('gig_id', gigId);
+
+    if (!gigParticipants || gigParticipants.length === 0) {
+      return c.json({ error: 'Access denied' }, 403);
+    }
+
+    // Check if user is member of any participating organization
+    const orgIds = gigParticipants.map(gp => gp.organization_id);
     const { data: membership } = await supabaseAdmin
       .from('organization_members')
       .select('*')
-      .eq('organization_id', gig.organization_id)
+      .in('organization_id', orgIds)
       .eq('user_id', user.id)
+      .limit(1)
       .single();
 
     if (!membership) {
@@ -495,7 +521,9 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
   try {
     const body = await c.req.json();
     const { 
-      organization_id, 
+      primary_organization_id, // The organization creating the gig (for permission check)
+      parent_gig_id,
+      hierarchy_depth = 0,
       venue_id, 
       act_id, 
       participants = [],
@@ -504,22 +532,25 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       ...gigData 
     } = body;
 
-    // Verify user has access to create gigs for this organization
-    const { data: membership } = await supabaseAdmin
-      .from('organization_members')
-      .select('*')
-      .eq('organization_id', organization_id)
-      .eq('user_id', user.id)
-      .single();
+    // Verify user has permission to create gigs (must be Admin or Manager in at least one org)
+    if (primary_organization_id) {
+      const { data: membership } = await supabaseAdmin
+        .from('organization_members')
+        .select('*')
+        .eq('organization_id', primary_organization_id)
+        .eq('user_id', user.id)
+        .single();
 
-    if (!membership || (membership.role !== 'Admin' && membership.role !== 'Manager')) {
-      return c.json({ error: 'Insufficient permissions. Only Admins and Managers can create gigs.' }, 403);
+      if (!membership || (membership.role !== 'Admin' && membership.role !== 'Manager')) {
+        return c.json({ error: 'Insufficient permissions. Only Admins and Managers can create gigs.' }, 403);
+      }
     }
 
     // Set created_by and updated_by
     const gigToInsert = {
       ...gigData,
-      organization_id,
+      parent_gig_id,
+      hierarchy_depth,
       created_by: user.id,
       updated_by: user.id,
     };
@@ -535,14 +566,22 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       return c.json({ error: error.message }, 400);
     }
 
-    // Create participants
+    // Create participants (including the primary organization if provided)
     const participantsToInsert = [];
+    
+    if (primary_organization_id) {
+      participantsToInsert.push({
+        gig_id: gig.id,
+        organization_id: primary_organization_id,
+        role: 'Production', // Default role for primary org
+      });
+    }
+    
     if (venue_id) {
       participantsToInsert.push({ 
         gig_id: gig.id, 
         organization_id: venue_id, 
         role: 'Venue',
-        status: 'Confirmed'
       });
     }
     if (act_id) {
@@ -550,7 +589,6 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
         gig_id: gig.id, 
         organization_id: act_id, 
         role: 'Act',
-        status: 'Confirmed'
       });
     }
     
@@ -561,7 +599,6 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
           gig_id: gig.id,
           organization_id: p.organization_id,
           role: p.role,
-          status: p.status || 'Pending',
           notes: p.notes || null,
         });
       }
@@ -577,43 +614,26 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       }
     }
 
-    // Create staff assignments
+    // Create staff slots (updated to use new schema with organization_id)
     if (staff.length > 0) {
-      const staffToInsert = staff.map((s: any) => ({
+      const staffSlotsToInsert = staff.map((s: any) => ({
         gig_id: gig.id,
-        user_id: s.user_id,
-        staff_role_id: s.staff_role_id || null,
-        role: s.role || null,
-        rate: s.rate || null,
+        organization_id: s.organization_id || primary_organization_id,
+        staff_role_id: s.staff_role_id,
+        required_count: s.required_count || 1,
         notes: s.notes || null,
       }));
 
       const { error: staffError } = await supabaseAdmin
-        .from('gig_staff')
-        .insert(staffToInsert);
+        .from('gig_staff_slots')
+        .insert(staffSlotsToInsert);
       
       if (staffError) {
-        console.error('Error creating staff assignments:', staffError);
+        console.error('Error creating staff slots:', staffError);
       }
     }
 
-    // Create equipment allocations
-    if (equipment.length > 0) {
-      const equipmentToInsert = equipment.map((e: any) => ({
-        gig_id: gig.id,
-        equipment_id: e.equipment_id,
-        quantity: e.quantity || 1,
-        notes: e.notes || null,
-      }));
-
-      const { error: equipmentError } = await supabaseAdmin
-        .from('gig_equipment')
-        .insert(equipmentToInsert);
-      
-      if (equipmentError) {
-        console.error('Error creating equipment allocations:', equipmentError);
-      }
-    }
+    // Equipment handling removed - will be replaced with kit assignments in future
 
     // Fetch the complete gig with all relations
     const { data: participantsData } = await supabaseAdmin
@@ -651,31 +671,42 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
     const body = await c.req.json();
     const { venue_id, act_id, ...gigData } = body;
 
-    // Get existing gig to verify access
-    const { data: existingGig } = await supabaseAdmin
+    // Get existing gig and verify access through participants
+    const { data: gig } = await supabaseAdmin
       .from('gigs')
-      .select('organization_id')
+      .select('*')
       .eq('id', gigId)
       .single();
 
-    if (!existingGig) {
+    if (!gig) {
       return c.json({ error: 'Gig not found' }, 404);
     }
 
-    // Verify user has access
-    const { data: membership } = await supabaseAdmin
+    // Verify user has access through gig participants
+    const { data: gigParticipants } = await supabaseAdmin
+      .from('gig_participants')
+      .select('organization_id')
+      .eq('gig_id', gigId);
+
+    if (!gigParticipants || gigParticipants.length === 0) {
+      return c.json({ error: 'Access denied' }, 403);
+    }
+
+    // Check if user is Admin or Manager of any participating organization
+    const orgIds = gigParticipants.map(gp => gp.organization_id);
+    const { data: memberships } = await supabaseAdmin
       .from('organization_members')
       .select('*')
-      .eq('organization_id', existingGig.organization_id)
+      .in('organization_id', orgIds)
       .eq('user_id', user.id)
-      .single();
+      .in('role', ['Admin', 'Manager']);
 
-    if (!membership || (membership.role !== 'Admin' && membership.role !== 'Manager')) {
+    if (!memberships || memberships.length === 0) {
       return c.json({ error: 'Insufficient permissions' }, 403);
     }
 
     // Update gig
-    const { data: gig, error } = await supabaseAdmin
+    const { data: updatedGig, error } = await supabaseAdmin
       .from('gigs')
       .update({ ...gigData, updated_by: user.id, updated_at: new Date().toISOString() })
       .eq('id', gigId)
@@ -730,7 +761,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
     const act = participants?.find(p => p.role === 'Act')?.organization;
 
     return c.json({
-      ...gig,
+      ...updatedGig,
       venue,
       act,
     });
@@ -752,27 +783,27 @@ app.delete("/make-server-de012ad4/gigs/:id", async (c) => {
   const gigId = c.req.param('id');
 
   try {
-    // Get existing gig to verify access
-    const { data: existingGig } = await supabaseAdmin
-      .from('gigs')
+    // Verify user has access through gig participants
+    const { data: gigParticipants } = await supabaseAdmin
+      .from('gig_participants')
       .select('organization_id')
-      .eq('id', gigId)
-      .single();
+      .eq('gig_id', gigId);
 
-    if (!existingGig) {
-      return c.json({ error: 'Gig not found' }, 404);
+    if (!gigParticipants || gigParticipants.length === 0) {
+      return c.json({ error: 'Gig not found or access denied' }, 403);
     }
 
-    // Verify user has access
-    const { data: membership } = await supabaseAdmin
+    // Check if user is Admin of any participating organization
+    const orgIds = gigParticipants.map(gp => gp.organization_id);
+    const { data: adminMemberships } = await supabaseAdmin
       .from('organization_members')
       .select('*')
-      .eq('organization_id', existingGig.organization_id)
+      .in('organization_id', orgIds)
       .eq('user_id', user.id)
-      .single();
+      .eq('role', 'Admin');
 
-    if (!membership || membership.role !== 'Admin') {
-      return c.json({ error: 'Insufficient permissions' }, 403);
+    if (!adminMemberships || adminMemberships.length === 0) {
+      return c.json({ error: 'Insufficient permissions. Only Admins can delete gigs.' }, 403);
     }
 
     const { error } = await supabaseAdmin

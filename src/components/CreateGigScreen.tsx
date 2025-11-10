@@ -342,7 +342,7 @@ export default function CreateGigScreen({
 
       // Prepare gig data
       const gigData = {
-        organization_id: organization.id,
+        primary_organization_id: organization.id,
         title: formData.title.trim(),
         start: startDateTime.toISOString(),
         end: endDateTime.toISOString(),
@@ -356,13 +356,11 @@ export default function CreateGigScreen({
         participants: additionalParticipants.map(p => ({
           organization_id: p.organization_id,
           role: p.role,
-          status: p.status,
           notes: p.notes || null,
         })),
         staff: staffAssignments.map(s => ({
-          user_id: s.user_id,
-          role: s.role,
-          rate: s.rate ? parseFloat(s.rate) : null,
+          staff_role_id: s.staff_role_id,
+          required_count: s.required_count || 1,
           notes: s.notes || null,
         })),
         equipment: equipmentAllocations.map(e => ({

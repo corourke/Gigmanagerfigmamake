@@ -62,7 +62,8 @@ export interface DbOrganizationMember {
 
 export interface DbGig {
   id: string;
-  organization_id: string;
+  parent_gig_id?: string;
+  hierarchy_depth: number;
   title: string;
   status: GigStatus;
   tags: string[];
@@ -104,6 +105,7 @@ export interface DbGigParticipant {
 
 export interface DbGigStaffSlot {
   id: string;
+  organization_id: string;
   gig_id: string;
   staff_role_id: string;
   required_count: number;
@@ -126,6 +128,7 @@ export interface DbGigStaffAssignment {
 
 export interface DbGigBid {
   id: string;
+  organization_id: string;
   gig_id: string;
   amount: number;
   date_given: string; // Date
@@ -163,6 +166,38 @@ export interface DbAsset {
   updated_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface DbKit {
+  id: string;
+  organization_id: string;
+  name: string;
+  category?: string;
+  description?: string;
+  tags: string[];
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbKitAsset {
+  id: string;
+  kit_id: string;
+  asset_id: string;
+  quantity: number;
+  notes?: string;
+  created_at: string;
+}
+
+export interface DbGigKitAssignment {
+  id: string;
+  organization_id: string;
+  gig_id: string;
+  kit_id: string;
+  notes?: string;
+  assigned_by: string;
+  assigned_at: string;
 }
 
 // Joined query types
