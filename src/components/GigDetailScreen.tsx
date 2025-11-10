@@ -3,14 +3,19 @@ import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import AppHeader from './AppHeader';
 import { ChevronLeft, Calendar, Clock, MapPin, User, Tag } from 'lucide-react';
-import type { Organization, User } from '../App';
+import type { Organization, User, UserRole } from '../App';
 import type { Gig } from './GigListScreen';
 
 interface GigDetailScreenProps {
   gigId: string;
   organization: Organization;
   user: User;
+  userRole?: UserRole;
   onBack: () => void;
+  onNavigateToDashboard: () => void;
+  onNavigateToGigs: () => void;
+  onSwitchOrganization: () => void;
+  onLogout: () => void;
 }
 
 // Mock gig data (in a real app, would fetch by ID)
@@ -55,7 +60,12 @@ export default function GigDetailScreen({
   gigId,
   organization,
   user,
+  userRole,
   onBack,
+  onNavigateToDashboard,
+  onNavigateToGigs,
+  onSwitchOrganization,
+  onLogout,
 }: GigDetailScreenProps) {
   const gig = MOCK_GIG; // In real app: fetch gig by gigId
 
@@ -65,10 +75,12 @@ export default function GigDetailScreen({
       <AppHeader
         organization={organization}
         user={user}
+        userRole={userRole}
         currentRoute="gig-detail"
-        onNavigateToDashboard={onBack}
-        onNavigateToGigs={onBack}
-        onLogout={() => {}}
+        onNavigateToDashboard={onNavigateToDashboard}
+        onNavigateToGigs={onNavigateToGigs}
+        onSwitchOrganization={onSwitchOrganization}
+        onLogout={onLogout}
       />
 
       {/* Page Title Bar */}

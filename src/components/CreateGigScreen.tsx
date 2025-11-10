@@ -35,7 +35,7 @@ import { z } from 'zod';
 import MarkdownEditor from './MarkdownEditor';
 import TagsInput from './TagsInput';
 import OrganizationSelector from './OrganizationSelector';
-import type { Organization, User } from '../App';
+import type { Organization, User, UserRole } from '../App';
 import type { GigStatus } from './GigListScreen';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { createClient } from '@supabase/supabase-js';
@@ -48,8 +48,13 @@ const supabase = createClient(
 interface CreateGigScreenProps {
   organization: Organization;
   user: User;
+  userRole?: UserRole;
   onCancel: () => void;
   onGigCreated: (gigId: string) => void;
+  onNavigateToDashboard: () => void;
+  onNavigateToGigs: () => void;
+  onSwitchOrganization: () => void;
+  onLogout: () => void;
 }
 
 // Zod validation schema
@@ -160,8 +165,13 @@ const PARTICIPANT_ROLES = [
 export default function CreateGigScreen({
   organization,
   user,
+  userRole,
   onCancel,
   onGigCreated,
+  onNavigateToDashboard,
+  onNavigateToGigs,
+  onSwitchOrganization,
+  onLogout,
 }: CreateGigScreenProps) {
   const [formData, setFormData] = useState<FormData>({
     title: '',
@@ -406,10 +416,12 @@ export default function CreateGigScreen({
       <AppHeader
         organization={organization}
         user={user}
+        userRole={userRole}
         currentRoute="create-gig"
-        onNavigateToDashboard={onCancel}
-        onNavigateToGigs={onCancel}
-        onLogout={() => {}}
+        onNavigateToDashboard={onNavigateToDashboard}
+        onNavigateToGigs={onNavigateToGigs}
+        onSwitchOrganization={onSwitchOrganization}
+        onLogout={onLogout}
       />
 
       {/* Page Title Bar */}

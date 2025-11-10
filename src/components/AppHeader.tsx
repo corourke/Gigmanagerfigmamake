@@ -79,18 +79,6 @@ export default function AppHeader({
 
           {/* User Menu */}
           <div className="flex items-center gap-3">
-            {onSwitchOrganization && organization && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onSwitchOrganization}
-                className="hidden sm:flex"
-              >
-                <SwitchCamera className="w-4 h-4 mr-2" />
-                Switch Organization
-              </Button>
-            )}
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
@@ -111,10 +99,13 @@ export default function AppHeader({
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {onSwitchOrganization && organization && (
-                  <DropdownMenuItem onClick={onSwitchOrganization}>
-                    <SwitchCamera className="w-4 h-4 mr-2" />
-                    Switch Organization
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem onClick={onSwitchOrganization}>
+                      <SwitchCamera className="w-4 h-4 mr-2" />
+                      Switch Organization
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
                 )}
                 <DropdownMenuItem>
                   <Settings className="w-4 h-4 mr-2" />

@@ -227,9 +227,14 @@ function App() {
         <GigListScreen
           organization={selectedOrganization}
           user={currentUser}
+          userRole={getCurrentUserRole()}
           onBack={handleBackToDashboard}
           onCreateGig={handleCreateGig}
           onViewGig={handleViewGig}
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={() => {}}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
           useMockData={USE_MOCK_DATA}
         />
       )}
@@ -238,8 +243,13 @@ function App() {
         <CreateGigScreen
           organization={selectedOrganization}
           user={currentUser}
+          userRole={getCurrentUserRole()}
           onCancel={handleBackToGigList}
           onGigCreated={handleGigCreated}
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={handleBackToGigList}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
         />
       )}
 
@@ -248,7 +258,12 @@ function App() {
           gigId={selectedGigId}
           organization={selectedOrganization}
           user={currentUser}
+          userRole={getCurrentUserRole()}
           onBack={handleBackToGigList}
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={handleBackToGigList}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
         />
       )}
       

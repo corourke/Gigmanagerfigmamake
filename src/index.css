@@ -2686,12 +2686,6 @@
   }
 
   @media (width >= 40rem) {
-    .sm\:flex {
-      display: flex;
-    }
-  }
-
-  @media (width >= 40rem) {
     .sm\:w-auto {
       width: auto;
     }

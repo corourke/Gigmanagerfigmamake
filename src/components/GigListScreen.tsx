@@ -58,7 +58,7 @@ import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { format, parse } from 'date-fns';
 import { toast } from 'sonner@2.0.3';
-import type { Organization, User } from '../App';
+import type { Organization, User, UserRole } from '../App';
 
 export type GigStatus = 'DateHold' | 'Proposed' | 'Booked' | 'Completed' | 'Cancelled' | 'Settled';
 
@@ -85,9 +85,14 @@ export interface Gig {
 interface GigListScreenProps {
   organization: Organization;
   user: User;
+  userRole?: UserRole;
   onBack: () => void;
   onCreateGig: () => void;
   onViewGig: (gigId: string) => void;
+  onNavigateToDashboard: () => void;
+  onNavigateToGigs: () => void;
+  onSwitchOrganization: () => void;
+  onLogout: () => void;
   useMockData?: boolean;
 }
 
@@ -247,9 +252,14 @@ const ALL_TAGS = ['Festival', 'Concert', 'Corporate Event', 'Wedding', 'Theater'
 export default function GigListScreen({
   organization,
   user,
+  userRole,
   onBack,
   onCreateGig,
   onViewGig,
+  onNavigateToDashboard,
+  onNavigateToGigs,
+  onSwitchOrganization,
+  onLogout,
   useMockData = false,
 }: GigListScreenProps) {
   const [gigs, setGigs] = useState<Gig[]>([]);
@@ -611,10 +621,12 @@ export default function GigListScreen({
       <AppHeader
         organization={organization}
         user={user}
+        userRole={userRole}
         currentRoute="gig-list"
-        onNavigateToDashboard={onBack}
-        onNavigateToGigs={() => {}}
-        onLogout={() => {}}
+        onNavigateToDashboard={onNavigateToDashboard}
+        onNavigateToGigs={onNavigateToGigs}
+        onSwitchOrganization={onSwitchOrganization}
+        onLogout={onLogout}
       />
 
       {/* Page Title and Actions Bar */}
