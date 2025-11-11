@@ -285,24 +285,45 @@ CREATE POLICY "Admins can update their organizations" ON organizations
   );
 
 -- Organization members policies
-CREATE POLICY "Users can view members of their organizations" ON organization_members
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM organization_members om
-      WHERE om.organization_id = organization_members.organization_id
-      AND om.user_id = auth.uid()
-    )
-  );
+-- Drop old recursive policies first (in case of re-running migration)
+DROP POLICY IF EXISTS "Users can view members of their organizations" ON organization_members;
+DROP POLICY IF EXISTS "Admins can manage organization members" ON organization_members;
 
-CREATE POLICY "Admins can manage organization members" ON organization_members
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM organization_members om
-      WHERE om.organization_id = organization_members.organization_id
-      AND om.user_id = auth.uid()
-      AND om.role = 'Admin'
-    )
+-- Create helper function to check membership (bypasses RLS to avoid recursion)
+CREATE OR REPLACE FUNCTION user_is_member_of_org(org_id UUID, user_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM organization_members
+    WHERE organization_id = org_id AND user_id = user_uuid
   );
+$$;
+
+-- Create helper function to check admin role (bypasses RLS to avoid recursion)
+CREATE OR REPLACE FUNCTION user_is_admin_of_org(org_id UUID, user_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM organization_members
+    WHERE organization_id = org_id 
+    AND user_id = user_uuid
+    AND role = 'Admin'
+  );
+$$;
+
+-- Policy: Users can view members of organizations they belong to (no recursion)
+CREATE POLICY "Users can view members of their organizations" ON organization_members
+  FOR SELECT USING (user_is_member_of_org(organization_id, auth.uid()));
+
+-- Policy: Admins can manage members of their organizations (no recursion)
+CREATE POLICY "Admins can manage organization members" ON organization_members
+  FOR ALL USING (user_is_admin_of_org(organization_id, auth.uid()));
 
 -- Staff roles policies (global, read by all)
 CREATE POLICY "Anyone can view staff roles" ON staff_roles
