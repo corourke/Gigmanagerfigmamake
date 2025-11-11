@@ -56,82 +56,32 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
 
   const handleAuthenticatedUser = async (accessToken: string, userId: string) => {
     try {
-      const supabaseUrl = `https://${projectId}.supabase.co`;
+      console.log('=== AUTHENTICATING USER ===');
+      console.log('User ID:', userId);
 
-      // Test health endpoint first
-      console.log('Testing health endpoint:', `${supabaseUrl}/functions/v1/server/health`);
-      try {
-        const healthResponse = await fetch(`${supabaseUrl}/functions/v1/server/health`);
-        console.log('Health check response:', healthResponse.status, healthResponse.statusText);
-        if (healthResponse.ok) {
-          const healthData = await healthResponse.json();
-          console.log('Health check data:', healthData);
-        }
-      } catch (healthErr) {
-        console.error('Health check failed:', healthErr);
-      }
+      // Fetch or create user profile using direct Supabase client
+      let userProfile = await getUserProfile(userId);
 
-      console.log('Fetching user profile from:', `${supabaseUrl}/functions/v1/server/users/${userId}`);
-
-      // Fetch or create user profile
-      const userResponse = await fetch(`${supabaseUrl}/functions/v1/server/users/${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }).catch(err => {
-        console.error('Network error fetching user profile:', err);
-        throw new Error(`Network error connecting to server. The server may not be deployed or available.`);
-      });
-      
-      if (userResponse.ok) {
-        // User profile exists
-        userProfile = await userResponse.json();
-      } else if (userResponse.status === 404) {
+      if (!userProfile) {
         // User doesn't exist, create profile
         console.log('User profile not found, creating new profile...');
-        const createResponse = await fetch(`${supabaseUrl}/functions/v1/server/users`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            first_name: firstName || 'User',
-            last_name: lastName || '',
-          }),
+        
+        // Get user metadata from Supabase auth
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        userProfile = await createUserProfile({
+          id: userId,
+          email: user?.email || email,
+          first_name: firstName || user?.user_metadata?.first_name || 'User',
+          last_name: lastName || user?.user_metadata?.last_name || '',
+          avatar_url: user?.user_metadata?.avatar_url || user?.user_metadata?.picture,
         });
         
-        if (!createResponse.ok) {
-          const errorData = await createResponse.json();
-          console.error('Failed to create user profile:', errorData);
-          throw new Error(errorData.error || 'Failed to create user profile');
-        }
-        
-        userProfile = await createResponse.json();
         console.log('User profile created successfully');
-      } else {
-        const errorData = await userResponse.json();
-        console.error('Failed to fetch user profile:', errorData);
-        throw new Error(errorData.error || 'Failed to fetch user profile');
       }
 
       // Fetch user's organizations
-      const orgsResponse = await fetch(
-        `${supabaseUrl}/functions/v1/server/users/${userId}/organizations`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!orgsResponse.ok) {
-        const errorData = await orgsResponse.json();
-        throw new Error(errorData.error || 'Failed to fetch organizations');
-      }
-
-      const orgsData = await orgsResponse.json();
+      const orgsData = await getUserOrganizations(userId);
 
       // Transform to app format
       const user: User = {
@@ -146,6 +96,8 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
         organization: membership.organization,
         role: membership.role,
       }));
+
+      console.log('Authentication successful:', { user, organizations: organizations.length });
 
       // Call onLogin callback
       onLogin(user, organizations);
@@ -279,6 +231,56 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
       setError(err.message || 'Authentication failed. Please try again.');
       setIsLoading(false);
     }
+  };
+
+  const getUserProfile = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching user profile:', error);
+      return null;
+    }
+
+    return data;
+  };
+
+  const createUserProfile = async (profile: {
+    id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    avatar_url: string;
+  }) => {
+    const { data, error } = await supabase
+      .from('users')
+      .insert([profile])
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Error creating user profile:', error);
+      throw new Error(error.message);
+    }
+
+    return data;
+  };
+
+  const getUserOrganizations = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('organization_members')
+      .select('*, organization:organizations(*)')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Error fetching user organizations:', error);
+      throw new Error(error.message);
+    }
+
+    return data || [];
   };
 
   return (

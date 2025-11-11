@@ -1,24 +1,4 @@
-import { Hono } from "npm:hono";
-import { cors } from "npm:hono/cors";
-import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
-
-const app = new Hono();
-
-// Enable logger
-app.use('*', logger(console.log));
-
-// Enable CORS for all routes and methods
-app.use(
-  "/*",
-  cors({
-    origin: "*",
-    allowHeaders: ["Content-Type", "Authorization"],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    exposeHeaders: ["Content-Length"],
-    maxAge: 600,
-  }),
-);
 
 // Create Supabase client with service role key
 const supabaseAdmin = createClient(
@@ -118,1100 +98,1230 @@ async function getOrCreateStaffRole(roleName: string) {
   return newRole.id;
 }
 
-// ===== Routes =====
+// ===== CORS Headers =====
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, PUT, DELETE, OPTIONS',
+};
 
-// Health check
-app.get("/health", (c) => {
-  return c.json({ status: "ok" });
-});
+// ===== Main Handler =====
+Deno.serve(async (req) => {
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const method = req.method;
 
-// ===== User Management =====
-
-// Create user profile after OAuth sign-up
-app.post("/users", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
+  // Handle CORS preflight
+  if (method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const body = await c.req.json();
-    const { first_name, last_name, avatar_url } = body;
-
-    // Check if user profile already exists
-    const { data: existingUser } = await supabaseAdmin
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (existingUser) {
-      return c.json(existingUser);
+    // Health check
+    if (path === '/health' && method === 'GET') {
+      return new Response(JSON.stringify({ status: 'ok' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
+    // ===== User Management =====
+    
     // Create user profile
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .insert({
-        id: user.id,
-        email: user.email,
-        first_name: first_name ?? user.user_metadata?.first_name ?? '',
-        last_name: last_name ?? user.user_metadata?.last_name ?? '',
-        avatar_url: avatar_url ?? user.user_metadata?.avatar_url ?? user.user_metadata?.picture,
-      })
-      .select()
-      .single();
+    if (path === '/users' && method === 'POST') {
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    if (error) {
-      console.error('Error creating user profile:', error);
-      return c.json({ error: error.message }, 400);
+      const body = await req.json();
+      const { first_name, last_name, avatar_url } = body;
+
+      // Check if user profile already exists
+      const { data: existingUser } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (existingUser) {
+        return new Response(JSON.stringify(existingUser), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Create user profile
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .insert({
+          id: user.id,
+          email: user.email,
+          first_name: first_name ?? user.user_metadata?.first_name ?? '',
+          last_name: last_name ?? user.user_metadata?.last_name ?? '',
+          avatar_url: avatar_url ?? user.user_metadata?.avatar_url ?? user.user_metadata?.picture,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating user profile:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    return c.json(data);
-  } catch (error) {
-    console.error('Error in user creation:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+    // Get user profile
+    const userMatch = path.match(/^\/users\/([^\/]+)$/);
+    if (userMatch && method === 'GET') {
+      const userId = userMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-// Get user profile
-app.get("/users/:id", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
 
-  const userId = c.req.param('id');
+      if (error) {
+        console.error('Error fetching user:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+      if (!data) {
+        return new Response(JSON.stringify({ error: 'User profile not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    if (error) {
-      console.error('Error fetching user:', error);
-      return c.json({ error: error.message }, 400);
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    if (!data) {
-      return c.json({ error: 'User profile not found' }, 404);
+    // Update user profile
+    if (userMatch && method === 'PUT') {
+      const userId = userMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (user.id !== userId) {
+        return new Response(JSON.stringify({ error: 'Cannot update another user\'s profile' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const body = await req.json();
+      const { first_name, last_name, phone, address_line1, address_line2, city, state, postal_code, country } = body;
+
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .update({
+          first_name,
+          last_name,
+          phone,
+          address_line1,
+          address_line2,
+          city,
+          state,
+          postal_code,
+          country,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating user profile:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    return c.json(data);
-  } catch (error) {
-    console.error('Error in user fetch:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+    // Search users
+    if (path === '/users' && method === 'GET') {
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-// Update user profile
-app.put("/users/:id", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
+      const search = url.searchParams.get('search');
 
-  const userId = c.req.param('id');
+      let query = supabaseAdmin
+        .from('users')
+        .select('*')
+        .order('first_name');
 
-  // Ensure user can only update their own profile
-  if (user.id !== userId) {
-    return c.json({ error: 'Cannot update another user\'s profile' }, 403);
-  }
+      if (search) {
+        query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
+      }
 
-  try {
-    const body = await c.req.json();
-    const { first_name, last_name, phone, address_line1, address_line2, city, state, postal_code, country } = body;
+      const { data, error } = await query.limit(20);
 
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .update({
-        first_name,
-        last_name,
-        phone,
-        address_line1,
-        address_line2,
-        city,
-        state,
-        postal_code,
-        country,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId)
-      .select()
-      .single();
+      if (error) {
+        console.error('Error searching users:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    if (error) {
-      console.error('Error updating user profile:', error);
-      return c.json({ error: error.message }, 400);
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    return c.json(data);
-  } catch (error) {
-    console.error('Error in user profile update:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+    // Get user's organizations
+    const userOrgsMatch = path.match(/^\/users\/([^\/]+)\/organizations$/);
+    if (userOrgsMatch && method === 'GET') {
+      const userId = userOrgsMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-// Search users (for staff assignment)
-app.get("/users", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
+      const { data, error } = await supabaseAdmin
+        .from('organization_members')
+        .select('*, organization:organizations(*)')
+        .eq('user_id', userId);
 
-  const search = c.req.query('search');
+      if (error) {
+        console.error('Error fetching user organizations:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-  try {
-    let query = supabaseAdmin
-      .from('users')
-      .select('*')
-      .order('first_name');
-
-    if (search) {
-      query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const { data, error } = await query.limit(20);
+    // ===== Organization Management =====
+    
+    // Search organizations
+    if (path === '/organizations' && method === 'GET') {
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    if (error) {
-      console.error('Error searching users:', error);
-      return c.json({ error: error.message }, 400);
+      const type = url.searchParams.get('type');
+      const search = url.searchParams.get('search');
+
+      let query = supabaseAdmin
+        .from('organizations')
+        .select('*')
+        .order('name');
+
+      if (type) {
+        query = query.eq('type', type);
+      }
+
+      if (search) {
+        query = query.ilike('name', `%${search}%`);
+      }
+
+      const { data, error } = await query.limit(20);
+
+      if (error) {
+        console.error('Error fetching organizations:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
-
-    return c.json(data);
-  } catch (error) {
-    console.error('Error in users search:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// Get user's organizations
-app.get("/users/:userId/organizations", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  const userId = c.req.param('userId');
-
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('organization_members')
-      .select('*, organization:organizations(*)')
-      .eq('user_id', userId);
-
-    if (error) {
-      console.error('Error fetching user organizations:', error);
-      return c.json({ error: error.message }, 400);
-    }
-
-    return c.json(data);
-  } catch (error) {
-    console.error('Error in organizations fetch:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// ===== Organization Management =====
-
-// Search organizations (for participant selection)
-app.get("/organizations", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  const type = c.req.query('type');
-  const search = c.req.query('search');
-
-  try {
-    let query = supabaseAdmin
-      .from('organizations')
-      .select('*')
-      .order('name');
-
-    if (type) {
-      query = query.eq('type', type);
-    }
-
-    if (search) {
-      query = query.ilike('name', `%${search}%`);
-    }
-
-    const { data, error } = await query.limit(20);
-
-    if (error) {
-      console.error('Error fetching organizations:', error);
-      return c.json({ error: error.message }, 400);
-    }
-
-    return c.json(data);
-  } catch (error) {
-    console.error('Error in organizations fetch:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// Create organization
-app.post("/organizations", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  try {
-    const body = await c.req.json();
 
     // Create organization
-    const { data: org, error: orgError } = await supabaseAdmin
-      .from('organizations')
-      .insert(body)
-      .select()
-      .single();
-
-    if (orgError) {
-      console.error('Error creating organization:', orgError);
-      return c.json({ error: orgError.message }, 400);
-    }
-
-    // Add creator as Admin member
-    const { error: memberError } = await supabaseAdmin
-      .from('organization_members')
-      .insert({
-        organization_id: org.id,
-        user_id: user.id,
-        role: 'Admin',
-      });
-
-    if (memberError) {
-      console.error('Error adding organization member:', memberError);
-      // Try to clean up the created org
-      await supabaseAdmin.from('organizations').delete().eq('id', org.id);
-      return c.json({ error: memberError.message }, 400);
-    }
-
-    return c.json(org);
-  } catch (error) {
-    console.error('Error in organization creation:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// Join an existing organization
-app.post("/organizations/:id/members", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  const orgId = c.req.param('id');
-
-  try {
-    // Check if organization exists
-    const { data: org, error: orgError } = await supabaseAdmin
-      .from('organizations')
-      .select('*')
-      .eq('id', orgId)
-      .single();
-
-    if (orgError || !org) {
-      return c.json({ error: 'Organization not found' }, 404);
-    }
-
-    // Check if user is already a member
-    const { data: existingMember } = await supabaseAdmin
-      .from('organization_members')
-      .select('*')
-      .eq('organization_id', orgId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (existingMember) {
-      return c.json({ error: 'Already a member of this organization' }, 400);
-    }
-
-    // Add user as a Viewer by default
-    const { data: membership, error: memberError } = await supabaseAdmin
-      .from('organization_members')
-      .insert({
-        organization_id: orgId,
-        user_id: user.id,
-        role: 'Viewer',
-      })
-      .select()
-      .single();
-
-    if (memberError) {
-      console.error('Error joining organization:', memberError);
-      return c.json({ error: memberError.message }, 400);
-    }
-
-    return c.json({ organization: org, role: membership.role });
-  } catch (error) {
-    console.error('Error in organization join:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// ===== Gig Management =====
-
-// Get gigs for organization
-app.get("/gigs", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  const organizationId = c.req.query('organization_id');
-
-  if (!organizationId) {
-    return c.json({ error: 'organization_id is required' }, 400);
-  }
-
-  try {
-    // Verify user has access to this organization
-    const { error: membershipError } = await verifyOrgMembership(user.id, organizationId);
-    if (membershipError) {
-      return c.json({ error: membershipError }, 403);
-    }
-
-    // Fetch gigs where this organization is a participant
-    const { data: gigParticipants, error } = await supabaseAdmin
-      .from('gig_participants')
-      .select('*, gig:gigs(*)')
-      .eq('organization_id', organizationId);
-
-    if (error) {
-      console.error('Error fetching gigs:', error);
-      return c.json({ error: error.message }, 400);
-    }
-
-    // Extract unique gigs
-    const gigsMap = new Map();
-    for (const gp of gigParticipants || []) {
-      if (gp.gig) {
-        gigsMap.set(gp.gig.id, gp.gig);
+    if (path === '/organizations' && method === 'POST') {
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
+
+      const body = await req.json();
+
+      // Create organization
+      const { data: org, error: orgError } = await supabaseAdmin
+        .from('organizations')
+        .insert(body)
+        .select()
+        .single();
+
+      if (orgError) {
+        console.error('Error creating organization:', orgError);
+        return new Response(JSON.stringify({ error: orgError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Add creator as Admin member
+      const { error: memberError } = await supabaseAdmin
+        .from('organization_members')
+        .insert({
+          organization_id: org.id,
+          user_id: user.id,
+          role: 'Admin',
+        });
+
+      if (memberError) {
+        console.error('Error adding organization member:', memberError);
+        // Try to clean up the created org
+        await supabaseAdmin.from('organizations').delete().eq('id', org.id);
+        return new Response(JSON.stringify({ error: memberError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(org), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const gigs = Array.from(gigsMap.values());
+    // Join organization
+    const orgMembersMatch = path.match(/^\/organizations\/([^\/]+)\/members$/);
+    if (orgMembersMatch && method === 'POST') {
+      const orgId = orgMembersMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    // For each gig, fetch all participants
-    const gigsWithParticipants = await Promise.all(
-      gigs.map(async (gig) => {
-        const { data: participants } = await supabaseAdmin
-          .from('gig_participants')
-          .select('*, organization:organization_id(*)')
-          .eq('gig_id', gig.id);
+      // Check if organization exists
+      const { data: org, error: orgError } = await supabaseAdmin
+        .from('organizations')
+        .select('*')
+        .eq('id', orgId)
+        .single();
 
-        // Legacy support: find venue and act from participants
-        const venue = participants?.find(p => p.role === 'Venue')?.organization;
-        const act = participants?.find(p => p.role === 'Act')?.organization;
+      if (orgError || !org) {
+        return new Response(JSON.stringify({ error: 'Organization not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-        return {
-          ...gig,
-          venue,
-          act,
-        };
-      })
-    );
+      // Check if user is already a member
+      const { data: existingMember } = await supabaseAdmin
+        .from('organization_members')
+        .select('*')
+        .eq('organization_id', orgId)
+        .eq('user_id', user.id)
+        .single();
 
-    // Sort by start date descending
-    gigsWithParticipants.sort((a, b) => 
-      new Date(b.start).getTime() - new Date(a.start).getTime()
-    );
+      if (existingMember) {
+        return new Response(JSON.stringify({ error: 'Already a member of this organization' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    return c.json(gigsWithParticipants);
-  } catch (error) {
-    console.error('Error in gigs fetch:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+      // Add user as a Viewer by default
+      const { data: membership, error: memberError } = await supabaseAdmin
+        .from('organization_members')
+        .insert({
+          organization_id: orgId,
+          user_id: user.id,
+          role: 'Viewer',
+        })
+        .select()
+        .single();
 
-// Get single gig
-app.get("/gigs/:id", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
+      if (memberError) {
+        console.error('Error joining organization:', memberError);
+        return new Response(JSON.stringify({ error: memberError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-  const gigId = c.req.param('id');
-
-  try {
-    const { data: gig, error } = await supabaseAdmin
-      .from('gigs')
-      .select('*')
-      .eq('id', gigId)
-      .single();
-
-    if (error) {
-      console.error('Error fetching gig:', error);
-      return c.json({ error: error.message }, 400);
+      return new Response(JSON.stringify({ organization: org, role: membership.role }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Verify user has access through gig participants
-    const { data: gigParticipants } = await supabaseAdmin
-      .from('gig_participants')
-      .select('organization_id')
-      .eq('gig_id', gigId);
+    // ===== Gig Management =====
+    
+    // Get gigs for organization
+    if (path === '/gigs' && method === 'GET') {
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    if (!gigParticipants || gigParticipants.length === 0) {
-      return c.json({ error: 'Access denied' }, 403);
-    }
+      const organizationId = url.searchParams.get('organization_id');
 
-    const orgIds = gigParticipants.map(gp => gp.organization_id);
-    const { error: membershipError } = await verifyAnyOrgMembership(user.id, orgIds);
-    if (membershipError) {
-      return c.json({ error: membershipError }, 403);
-    }
+      if (!organizationId) {
+        return new Response(JSON.stringify({ error: 'organization_id is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    // Fetch full participant data with organization details
-    const { data: participants } = await supabaseAdmin
-      .from('gig_participants')
-      .select('*, organization:organization_id(*)')
-      .eq('gig_id', gig.id);
+      // Verify user has access to this organization
+      const { error: membershipError } = await verifyOrgMembership(user.id, organizationId);
+      if (membershipError) {
+        return new Response(JSON.stringify({ error: membershipError }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    return c.json({
-      ...gig,
-      participants: participants || [],
-    });
-  } catch (error) {
-    console.error('Error in gig fetch:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+      // Fetch gigs where this organization is a participant
+      const { data: gigParticipants, error } = await supabaseAdmin
+        .from('gig_participants')
+        .select('*, gig:gigs(*)')
+        .eq('organization_id', organizationId);
 
-// Create gig
-app.post("/gigs", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
+      if (error) {
+        console.error('Error fetching gigs:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-  try {
-    const body = await c.req.json();
-    const { 
-      primary_organization_id,
-      parent_gig_id,
-      hierarchy_depth = 0,
-      participants = [],
-      staff_slots = [],
-      ...gigData 
-    } = body;
+      // Extract unique gigs
+      const gigsMap = new Map();
+      for (const gp of gigParticipants || []) {
+        if (gp.gig) {
+          gigsMap.set(gp.gig.id, gp.gig);
+        }
+      }
 
-    // Verify user has permission to create gigs (must be Admin or Manager)
-    let primaryOrgType = 'Production';
-    if (primary_organization_id) {
-      const { membership, error: membershipError } = await verifyOrgMembership(
-        user.id, 
-        primary_organization_id, 
-        ['Admin', 'Manager']
+      const gigs = Array.from(gigsMap.values());
+
+      // For each gig, fetch all participants
+      const gigsWithParticipants = await Promise.all(
+        gigs.map(async (gig) => {
+          const { data: participants } = await supabaseAdmin
+            .from('gig_participants')
+            .select('*, organization:organization_id(*)')
+            .eq('gig_id', gig.id);
+
+          // Legacy support: find venue and act from participants
+          const venue = participants?.find(p => p.role === 'Venue')?.organization;
+          const act = participants?.find(p => p.role === 'Act')?.organization;
+
+          return {
+            ...gig,
+            venue,
+            act,
+          };
+        })
       );
 
-      if (membershipError || !membership) {
-        return c.json({ error: 'Insufficient permissions. Only Admins and Managers can create gigs.' }, 403);
+      // Sort by start date descending
+      gigsWithParticipants.sort((a, b) => 
+        new Date(b.start).getTime() - new Date(a.start).getTime()
+      );
+
+      return new Response(JSON.stringify(gigsWithParticipants), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Get single gig
+    const gigMatch = path.match(/^\/gigs\/([^\/]+)$/);
+    if (gigMatch && method === 'GET') {
+      const gigId = gigMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
-      // Get the organization type for the default role
-      if (membership.organization?.type) {
-        primaryOrgType = membership.organization.type;
+      const { data: gig, error } = await supabaseAdmin
+        .from('gigs')
+        .select('*')
+        .eq('id', gigId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching gig:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
+
+      // Verify user has access through gig participants
+      const { data: gigParticipants } = await supabaseAdmin
+        .from('gig_participants')
+        .select('organization_id')
+        .eq('gig_id', gigId);
+
+      if (!gigParticipants || gigParticipants.length === 0) {
+        return new Response(JSON.stringify({ error: 'Access denied' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const orgIds = gigParticipants.map(gp => gp.organization_id);
+      const { error: membershipError } = await verifyAnyOrgMembership(user.id, orgIds);
+      if (membershipError) {
+        return new Response(JSON.stringify({ error: membershipError }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Fetch full participant data with organization details
+      const { data: participants } = await supabaseAdmin
+        .from('gig_participants')
+        .select('*, organization:organization_id(*)')
+        .eq('gig_id', gig.id);
+
+      return new Response(JSON.stringify({
+        ...gig,
+        participants: participants || [],
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // Create gig
-    const { data: gig, error } = await supabaseAdmin
-      .from('gigs')
-      .insert({
-        ...gigData,
-        parent_gig_id,
-        hierarchy_depth,
-        created_by: user.id,
-        updated_by: user.id,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error creating gig:', error);
-      return c.json({ error: error.message }, 400);
-    }
-
-    // Create participants
-    const participantsToInsert: Array<{
-      gig_id: string;
-      organization_id: string;
-      role: string;
-      notes?: string | null;
-    }> = [];
-    
-    if (primary_organization_id) {
-      participantsToInsert.push({
-        gig_id: gig.id,
-        organization_id: primary_organization_id,
-        role: primaryOrgType,
-        notes: null,
-      });
-    }
-    
-    participants.forEach((p: any) => {
-      if (p.organization_id && p.role) {
-        participantsToInsert.push({
-          gig_id: gig.id,
-          organization_id: p.organization_id,
-          role: p.role,
-          notes: p.notes || null,
+    if (path === '/gigs' && method === 'POST') {
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-    });
 
-    if (participantsToInsert.length > 0) {
-      const { error: participantsError } = await supabaseAdmin
-        .from('gig_participants')
-        .insert(participantsToInsert);
+      const body = await req.json();
+      const { 
+        primary_organization_id,
+        parent_gig_id,
+        hierarchy_depth = 0,
+        participants = [],
+        staff_slots = [],
+        ...gigData 
+      } = body;
+
+      // Verify user has permission to create gigs (must be Admin or Manager)
+      let primaryOrgType = 'Production';
+      if (primary_organization_id) {
+        const { membership, error: membershipError } = await verifyOrgMembership(
+          user.id, 
+          primary_organization_id, 
+          ['Admin', 'Manager']
+        );
+
+        if (membershipError || !membership) {
+          return new Response(JSON.stringify({ error: 'Insufficient permissions. Only Admins and Managers can create gigs.' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Get the organization type for the default role
+        if (membership.organization?.type) {
+          primaryOrgType = membership.organization.type;
+        }
+      }
+
+      // Create gig
+      const { data: gig, error } = await supabaseAdmin
+        .from('gigs')
+        .insert({
+          ...gigData,
+          parent_gig_id,
+          hierarchy_depth,
+          created_by: user.id,
+          updated_by: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating gig:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Create participants
+      const participantsToInsert: Array<{
+        gig_id: string;
+        organization_id: string;
+        role: string;
+        notes?: string | null;
+      }> = [];
       
-      if (participantsError) {
-        console.error('Error creating participants:', participantsError);
+      if (primary_organization_id) {
+        participantsToInsert.push({
+          gig_id: gig.id,
+          organization_id: primary_organization_id,
+          role: primaryOrgType,
+          notes: null,
+        });
       }
-    }
-
-    // Create staff slots with assignments
-    if (staff_slots.length > 0) {
-      for (const slot of staff_slots) {
-        const staffRoleId = await getOrCreateStaffRole(slot.role);
-        if (!staffRoleId) continue;
-        
-        const { data: createdSlot, error: slotError } = await supabaseAdmin
-          .from('gig_staff_slots')
-          .insert({
+      
+      participants.forEach((p: any) => {
+        if (p.organization_id && p.role) {
+          participantsToInsert.push({
             gig_id: gig.id,
-            organization_id: slot.organization_id || primary_organization_id,
-            staff_role_id: staffRoleId,
-            required_count: slot.count || slot.required_count || 1,
-            notes: slot.notes || null,
-          })
-          .select()
-          .single();
-        
-        if (slotError) {
-          console.error('Error creating staff slot:', slotError);
-          continue;
+            organization_id: p.organization_id,
+            role: p.role,
+            notes: p.notes || null,
+          });
         }
-        
-        // Create staff assignments
-        if (slot.assignments?.length > 0) {
-          const assignmentsToInsert = slot.assignments
-            .filter((a: any) => a.user_id)
-            .map((a: any) => ({
-              gig_staff_slot_id: createdSlot.id,
-              user_id: a.user_id,
-              status: a.status || 'Requested',
-              rate: a.rate || null,
-              fee: a.fee || null,
-              notes: a.notes || null,
-            }));
-          
-          if (assignmentsToInsert.length > 0) {
-            const { error: assignmentsError } = await supabaseAdmin
-              .from('gig_staff_assignments')
-              .insert(assignmentsToInsert);
-            
-            if (assignmentsError) {
-              console.error('Error creating staff assignments:', assignmentsError);
-            }
-          }
-        }
-      }
-    }
+      });
 
-    // Fetch complete gig with participants
-    const { data: participantsData } = await supabaseAdmin
-      .from('gig_participants')
-      .select('*, organization:organization_id(*)')
-      .eq('gig_id', gig.id);
-
-    const venue = participantsData?.find(p => p.role === 'Venue')?.organization;
-    const act = participantsData?.find(p => p.role === 'Act')?.organization;
-
-    return c.json({
-      ...gig,
-      venue,
-      act,
-      participants: participantsData || [],
-    });
-  } catch (error) {
-    console.error('Error in gig creation:', error);
-    return c.json({ error: 'Internal server error while creating gig' }, 500);
-  }
-});
-
-// Update gig
-app.put("/gigs/:id", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  const gigId = c.req.param('id');
-
-  try {
-    const body = await c.req.json();
-    const { participants, staff_slots, ...gigData } = body;
-
-    // Get existing gig
-    const { data: gig } = await supabaseAdmin
-      .from('gigs')
-      .select('*')
-      .eq('id', gigId)
-      .single();
-
-    if (!gig) {
-      return c.json({ error: 'Gig not found' }, 404);
-    }
-
-    // Verify user has Admin or Manager access
-    const { data: gigParticipants } = await supabaseAdmin
-      .from('gig_participants')
-      .select('organization_id')
-      .eq('gig_id', gigId);
-
-    if (!gigParticipants || gigParticipants.length === 0) {
-      return c.json({ error: 'Access denied' }, 403);
-    }
-
-    const orgIds = gigParticipants.map(gp => gp.organization_id);
-    const { data: memberships } = await supabaseAdmin
-      .from('organization_members')
-      .select('*')
-      .in('organization_id', orgIds)
-      .eq('user_id', user.id)
-      .in('role', ['Admin', 'Manager']);
-
-    if (!memberships || memberships.length === 0) {
-      return c.json({ error: 'Insufficient permissions' }, 403);
-    }
-
-    // Update gig
-    const { data: updatedGig, error } = await supabaseAdmin
-      .from('gigs')
-      .update({ ...gigData, updated_by: user.id, updated_at: new Date().toISOString() })
-      .eq('id', gigId)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error updating gig:', error);
-      return c.json({ error: error.message }, 400);
-    }
-
-    // Update participants if provided
-    if (participants !== undefined) {
-      const { data: existingParticipants } = await supabaseAdmin
-        .from('gig_participants')
-        .select('id, organization_id, role')
-        .eq('gig_id', gigId);
-
-      const existingIds = new Set((existingParticipants || []).map(p => p.id));
-      const incomingParticipants = participants
-        .filter((p: any) => p.organization_id && p.role)
-        .map((p: any) => ({
-          id: p.id || null,
-          organization_id: p.organization_id,
-          role: p.role,
-          notes: p.notes || null,
-        }));
-
-      const incomingIds = new Set(incomingParticipants.filter((p: any) => p.id).map((p: any) => p.id));
-
-      // Delete removed participants
-      const idsToDelete = Array.from(existingIds).filter(id => !incomingIds.has(id));
-      if (idsToDelete.length > 0) {
-        await supabaseAdmin
+      if (participantsToInsert.length > 0) {
+        const { error: participantsError } = await supabaseAdmin
           .from('gig_participants')
-          .delete()
-          .in('id', idsToDelete);
-      }
-
-      // Update existing and insert new participants
-      for (const p of incomingParticipants) {
-        if (p.id && existingIds.has(p.id)) {
-          await supabaseAdmin
-            .from('gig_participants')
-            .update({
-              organization_id: p.organization_id,
-              role: p.role,
-              notes: p.notes,
-            })
-            .eq('id', p.id);
-        } else {
-          await supabaseAdmin
-            .from('gig_participants')
-            .insert({
-              gig_id: gigId,
-              organization_id: p.organization_id,
-              role: p.role,
-              notes: p.notes,
-            });
+          .insert(participantsToInsert);
+        
+        if (participantsError) {
+          console.error('Error creating participants:', participantsError);
         }
       }
-    }
 
-    // Update staff slots if provided
-    if (staff_slots !== undefined) {
-      const { data: existingSlots } = await supabaseAdmin
-        .from('gig_staff_slots')
-        .select('id, staff_role_id, organization_id, required_count, notes, assignments:gig_staff_assignments(id, user_id, status, rate, fee, notes)')
-        .eq('gig_id', gigId);
-
-      const existingSlotIds = new Set((existingSlots || []).map(s => s.id));
-      const incomingSlots = staff_slots.filter((s: any) => s.role && s.role.trim() !== '');
-      const processedSlotIds = new Set();
-
-      for (const slot of incomingSlots) {
-        const staffRoleId = await getOrCreateStaffRole(slot.role);
-        if (!staffRoleId) continue;
-
-        let slotId = slot.id;
-
-        // Update existing or insert new slot
-        if (slotId && existingSlotIds.has(slotId)) {
-          await supabaseAdmin
-            .from('gig_staff_slots')
-            .update({
-              staff_role_id: staffRoleId,
-              organization_id: slot.organization_id || null,
-              required_count: slot.count || slot.required_count || 1,
-              notes: slot.notes || null,
-            })
-            .eq('id', slotId);
+      // Create staff slots with assignments
+      if (staff_slots.length > 0) {
+        for (const slot of staff_slots) {
+          const staffRoleId = await getOrCreateStaffRole(slot.role);
+          if (!staffRoleId) continue;
           
-          processedSlotIds.add(slotId);
-        } else {
-          const { data: newSlot } = await supabaseAdmin
+          const { data: createdSlot, error: slotError } = await supabaseAdmin
             .from('gig_staff_slots')
             .insert({
-              gig_id: gigId,
+              gig_id: gig.id,
+              organization_id: slot.organization_id || primary_organization_id,
               staff_role_id: staffRoleId,
-              organization_id: slot.organization_id || null,
               required_count: slot.count || slot.required_count || 1,
               notes: slot.notes || null,
             })
-            .select('id')
+            .select()
             .single();
-
-          if (newSlot) {
-            slotId = newSlot.id;
-            processedSlotIds.add(slotId);
+          
+          if (slotError) {
+            console.error('Error creating staff slot:', slotError);
+            continue;
           }
-        }
-
-        // Handle assignments for this slot
-        if (slot.assignments && slot.assignments.length > 0) {
-          const { data: existingAssignments } = await supabaseAdmin
-            .from('gig_staff_assignments')
-            .select('id, user_id')
-            .eq('gig_staff_slot_id', slotId);
-
-          const existingAssignmentIds = new Set((existingAssignments || []).map(a => a.id));
-          const incomingAssignments = slot.assignments.filter((a: any) => a.user_id && a.user_id.trim() !== '');
-          const processedAssignmentIds = new Set();
-
-          for (const assignment of incomingAssignments) {
-            if (assignment.id && existingAssignmentIds.has(assignment.id)) {
-              await supabaseAdmin
+          
+          // Create staff assignments
+          if (slot.assignments?.length > 0) {
+            const assignmentsToInsert = slot.assignments
+              .filter((a: any) => a.user_id)
+              .map((a: any) => ({
+                gig_staff_slot_id: createdSlot.id,
+                user_id: a.user_id,
+                status: a.status || 'Requested',
+                rate: a.rate || null,
+                fee: a.fee || null,
+                notes: a.notes || null,
+              }));
+            
+            if (assignmentsToInsert.length > 0) {
+              const { error: assignmentsError } = await supabaseAdmin
                 .from('gig_staff_assignments')
-                .update({
-                  user_id: assignment.user_id,
-                  status: assignment.status || 'Requested',
-                  rate: assignment.rate || null,
-                  fee: assignment.fee || null,
-                  notes: assignment.notes || null,
-                })
-                .eq('id', assignment.id);
+                .insert(assignmentsToInsert);
               
-              processedAssignmentIds.add(assignment.id);
-            } else {
-              const { data: newAssignment } = await supabaseAdmin
-                .from('gig_staff_assignments')
-                .insert({
-                  gig_staff_slot_id: slotId,
-                  user_id: assignment.user_id,
-                  status: assignment.status || 'Requested',
-                  rate: assignment.rate || null,
-                  fee: assignment.fee || null,
-                  notes: assignment.notes || null,
-                })
-                .select('id')
-                .single();
-
-              if (newAssignment) {
-                processedAssignmentIds.add(newAssignment.id);
+              if (assignmentsError) {
+                console.error('Error creating staff assignments:', assignmentsError);
               }
             }
           }
-
-          // Delete removed assignments
-          const assignmentIdsToDelete = Array.from(existingAssignmentIds).filter(id => !processedAssignmentIds.has(id));
-          if (assignmentIdsToDelete.length > 0) {
-            await supabaseAdmin
-              .from('gig_staff_assignments')
-              .delete()
-              .in('id', assignmentIdsToDelete);
-          }
-        } else {
-          // Delete all assignments for this slot
-          await supabaseAdmin
-            .from('gig_staff_assignments')
-            .delete()
-            .eq('gig_staff_slot_id', slotId);
         }
       }
 
-      // Delete removed slots (cascade will handle assignments)
-      const slotIdsToDelete = Array.from(existingSlotIds).filter(id => !processedSlotIds.has(id));
-      if (slotIdsToDelete.length > 0) {
-        await supabaseAdmin
+      // Fetch complete gig with participants
+      const { data: participantsData } = await supabaseAdmin
+        .from('gig_participants')
+        .select('*, organization:organization_id(*)')
+        .eq('gig_id', gig.id);
+
+      const venue = participantsData?.find(p => p.role === 'Venue')?.organization;
+      const act = participantsData?.find(p => p.role === 'Act')?.organization;
+
+      return new Response(JSON.stringify({
+        ...gig,
+        venue,
+        act,
+        participants: participantsData || [],
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Update gig
+    if (gigMatch && method === 'PUT') {
+      const gigId = gigMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const body = await req.json();
+      const { participants, staff_slots, ...gigData } = body;
+
+      // Get existing gig
+      const { data: gig } = await supabaseAdmin
+        .from('gigs')
+        .select('*')
+        .eq('id', gigId)
+        .single();
+
+      if (!gig) {
+        return new Response(JSON.stringify({ error: 'Gig not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Verify user has Admin or Manager access
+      const { data: gigParticipants } = await supabaseAdmin
+        .from('gig_participants')
+        .select('organization_id')
+        .eq('gig_id', gigId);
+
+      if (!gigParticipants || gigParticipants.length === 0) {
+        return new Response(JSON.stringify({ error: 'Access denied' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const orgIds = gigParticipants.map(gp => gp.organization_id);
+      const { data: memberships } = await supabaseAdmin
+        .from('organization_members')
+        .select('*')
+        .in('organization_id', orgIds)
+        .eq('user_id', user.id)
+        .in('role', ['Admin', 'Manager']);
+
+      if (!memberships || memberships.length === 0) {
+        return new Response(JSON.stringify({ error: 'Insufficient permissions' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update gig
+      const { data: updatedGig, error } = await supabaseAdmin
+        .from('gigs')
+        .update({ ...gigData, updated_by: user.id, updated_at: new Date().toISOString() })
+        .eq('id', gigId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating gig:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update participants if provided
+      if (participants !== undefined) {
+        const { data: existingParticipants } = await supabaseAdmin
+          .from('gig_participants')
+          .select('id, organization_id, role')
+          .eq('gig_id', gigId);
+
+        const existingIds = new Set((existingParticipants || []).map(p => p.id));
+        const incomingParticipants = participants
+          .filter((p: any) => p.organization_id && p.role)
+          .map((p: any) => ({
+            id: p.id || null,
+            organization_id: p.organization_id,
+            role: p.role,
+            notes: p.notes || null,
+          }));
+
+        const incomingIds = new Set(incomingParticipants.filter((p: any) => p.id).map((p: any) => p.id));
+
+        // Delete removed participants
+        const idsToDelete = Array.from(existingIds).filter(id => !incomingIds.has(id));
+        if (idsToDelete.length > 0) {
+          await supabaseAdmin
+            .from('gig_participants')
+            .delete()
+            .in('id', idsToDelete);
+        }
+
+        // Update existing and insert new participants
+        for (const p of incomingParticipants) {
+          if (p.id && existingIds.has(p.id)) {
+            await supabaseAdmin
+              .from('gig_participants')
+              .update({
+                organization_id: p.organization_id,
+                role: p.role,
+                notes: p.notes,
+              })
+              .eq('id', p.id);
+          } else {
+            await supabaseAdmin
+              .from('gig_participants')
+              .insert({
+                gig_id: gigId,
+                organization_id: p.organization_id,
+                role: p.role,
+                notes: p.notes,
+              });
+          }
+        }
+      }
+
+      // Update staff slots if provided
+      if (staff_slots !== undefined) {
+        const { data: existingSlots } = await supabaseAdmin
           .from('gig_staff_slots')
-          .delete()
-          .in('id', slotIdsToDelete);
+          .select('id, staff_role_id, organization_id, required_count, notes, assignments:gig_staff_assignments(id, user_id, status, rate, fee, notes)')
+          .eq('gig_id', gigId);
+
+        const existingSlotIds = new Set((existingSlots || []).map(s => s.id));
+        const incomingSlots = staff_slots.filter((s: any) => s.role && s.role.trim() !== '');
+        const processedSlotIds = new Set();
+
+        for (const slot of incomingSlots) {
+          const staffRoleId = await getOrCreateStaffRole(slot.role);
+          if (!staffRoleId) continue;
+
+          let slotId = slot.id;
+
+          // Update existing or insert new slot
+          if (slotId && existingSlotIds.has(slotId)) {
+            await supabaseAdmin
+              .from('gig_staff_slots')
+              .update({
+                staff_role_id: staffRoleId,
+                organization_id: slot.organization_id || null,
+                required_count: slot.count || slot.required_count || 1,
+                notes: slot.notes || null,
+              })
+              .eq('id', slotId);
+            
+            processedSlotIds.add(slotId);
+          } else {
+            const { data: newSlot } = await supabaseAdmin
+              .from('gig_staff_slots')
+              .insert({
+                gig_id: gigId,
+                staff_role_id: staffRoleId,
+                organization_id: slot.organization_id || null,
+                required_count: slot.count || slot.required_count || 1,
+                notes: slot.notes || null,
+              })
+              .select('id')
+              .single();
+
+            if (newSlot) {
+              slotId = newSlot.id;
+              processedSlotIds.add(slotId);
+            }
+          }
+
+          // Handle assignments for this slot
+          if (slot.assignments && slot.assignments.length > 0) {
+            const { data: existingAssignments } = await supabaseAdmin
+              .from('gig_staff_assignments')
+              .select('id, user_id')
+              .eq('gig_staff_slot_id', slotId);
+
+            const existingAssignmentIds = new Set((existingAssignments || []).map(a => a.id));
+            const incomingAssignments = slot.assignments.filter((a: any) => a.user_id && a.user_id.trim() !== '');
+            const processedAssignmentIds = new Set();
+
+            for (const assignment of incomingAssignments) {
+              if (assignment.id && existingAssignmentIds.has(assignment.id)) {
+                await supabaseAdmin
+                  .from('gig_staff_assignments')
+                  .update({
+                    user_id: assignment.user_id,
+                    status: assignment.status || 'Requested',
+                    rate: assignment.rate || null,
+                    fee: assignment.fee || null,
+                    notes: assignment.notes || null,
+                  })
+                  .eq('id', assignment.id);
+                
+                processedAssignmentIds.add(assignment.id);
+              } else {
+                const { data: newAssignment } = await supabaseAdmin
+                  .from('gig_staff_assignments')
+                  .insert({
+                    gig_staff_slot_id: slotId,
+                    user_id: assignment.user_id,
+                    status: assignment.status || 'Requested',
+                    rate: assignment.rate || null,
+                    fee: assignment.fee || null,
+                    notes: assignment.notes || null,
+                  })
+                  .select('id')
+                  .single();
+
+                if (newAssignment) {
+                  processedAssignmentIds.add(newAssignment.id);
+                }
+              }
+            }
+
+            // Delete removed assignments
+            const assignmentIdsToDelete = Array.from(existingAssignmentIds).filter(id => !processedAssignmentIds.has(id));
+            if (assignmentIdsToDelete.length > 0) {
+              await supabaseAdmin
+                .from('gig_staff_assignments')
+                .delete()
+                .in('id', assignmentIdsToDelete);
+            }
+          } else {
+            // Delete all assignments for this slot
+            await supabaseAdmin
+              .from('gig_staff_assignments')
+              .delete()
+              .eq('gig_staff_slot_id', slotId);
+          }
+        }
+
+        // Delete removed slots (cascade will handle assignments)
+        const slotIdsToDelete = Array.from(existingSlotIds).filter(id => !processedSlotIds.has(id));
+        if (slotIdsToDelete.length > 0) {
+          await supabaseAdmin
+            .from('gig_staff_slots')
+            .delete()
+            .in('id', slotIdsToDelete);
+        }
       }
+
+      // Fetch updated participants
+      const { data: updatedParticipants } = await supabaseAdmin
+        .from('gig_participants')
+        .select('*, organization:organization_id(*)')
+        .eq('gig_id', gigId);
+
+      const venue = updatedParticipants?.find(p => p.role === 'Venue')?.organization;
+      const act = updatedParticipants?.find(p => p.role === 'Act')?.organization;
+
+      return new Response(JSON.stringify({
+        ...updatedGig,
+        venue,
+        act,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Fetch updated participants
-    const { data: updatedParticipants } = await supabaseAdmin
-      .from('gig_participants')
-      .select('*, organization:organization_id(*)')
-      .eq('gig_id', gigId);
+    // Delete gig
+    if (gigMatch && method === 'DELETE') {
+      const gigId = gigMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    const venue = updatedParticipants?.find(p => p.role === 'Venue')?.organization;
-    const act = updatedParticipants?.find(p => p.role === 'Act')?.organization;
+      // Verify user has admin access through gig participants
+      const { data: gigParticipants } = await supabaseAdmin
+        .from('gig_participants')
+        .select('organization_id')
+        .eq('gig_id', gigId);
 
-    return c.json({
-      ...updatedGig,
-      venue,
-      act,
-    });
-  } catch (error) {
-    console.error('Error in gig update:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+      if (!gigParticipants || gigParticipants.length === 0) {
+        return new Response(JSON.stringify({ error: 'Gig not found or access denied' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-// Delete gig
-app.delete("/gigs/:id", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
+      const orgIds = gigParticipants.map(gp => gp.organization_id);
+      const { data: adminMemberships } = await supabaseAdmin
+        .from('organization_members')
+        .select('*')
+        .in('organization_id', orgIds)
+        .eq('user_id', user.id)
+        .eq('role', 'Admin');
 
-  const gigId = c.req.param('id');
+      if (!adminMemberships || adminMemberships.length === 0) {
+        return new Response(JSON.stringify({ error: 'Insufficient permissions. Only Admins can delete gigs.' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-  try {
-    // Verify user has admin access through gig participants
-    const { data: gigParticipants } = await supabaseAdmin
-      .from('gig_participants')
-      .select('organization_id')
-      .eq('gig_id', gigId);
+      const { error } = await supabaseAdmin
+        .from('gigs')
+        .delete()
+        .eq('id', gigId);
 
-    if (!gigParticipants || gigParticipants.length === 0) {
-      return c.json({ error: 'Gig not found or access denied' }, 403);
+      if (error) {
+        console.error('Error deleting gig:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const orgIds = gigParticipants.map(gp => gp.organization_id);
-    const { data: adminMemberships } = await supabaseAdmin
-      .from('organization_members')
-      .select('*')
-      .in('organization_id', orgIds)
-      .eq('user_id', user.id)
-      .eq('role', 'Admin');
-
-    if (!adminMemberships || adminMemberships.length === 0) {
-      return c.json({ error: 'Insufficient permissions. Only Admins can delete gigs.' }, 403);
-    }
-
-    const { error } = await supabaseAdmin
-      .from('gigs')
-      .delete()
-      .eq('id', gigId);
-
-    if (error) {
-      console.error('Error deleting gig:', error);
-      return c.json({ error: error.message }, 400);
-    }
-
-    return c.json({ success: true });
-  } catch (error) {
-    console.error('Error in gig deletion:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// ===== Google Places Integration =====
-
-// Search Google Places
-app.get("/integrations/google-places/search", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  const query = c.req.query('query');
-  const latitude = c.req.query('latitude');
-  const longitude = c.req.query('longitude');
-  
-  if (!query) {
-    return c.json({ error: 'Query parameter is required' }, 400);
-  }
-
-  const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
-  
-  if (!apiKey) {
-    console.error('Google Maps API key not configured');
-    return c.json({ error: 'Google Maps API key not configured' }, 500);
-  }
-
-  try {
-    const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
-    url.searchParams.append('query', query);
-    url.searchParams.append('key', apiKey);
+    // ===== Google Places Integration =====
     
-    if (latitude && longitude) {
-      url.searchParams.append('location', `${latitude},${longitude}`);
-      url.searchParams.append('radius', '50000');
-    }
-
-    const response = await fetch(url.toString());
-    const data = await response.json();
-
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      console.error('Google Places API error:', data);
-      return c.json({ 
-        error: `Google Places API error: ${data.status}`,
-        details: data.error_message 
-      }, 500);
-    }
-
-    // Filter results for relevance to event industry
-    const relevantKeywords = [
-      'sound', 'audio', 'lighting', 'stage', 'staging', 'production',
-      'event', 'venue', 'entertainment', 'music', 'concert', 'theater',
-      'theatre', 'show', 'performance', 'rental', 'av', 'pro audio'
-    ];
-
-    const scoredResults = (data.results || []).map((place: any) => {
-      const name = (place.name || '').toLowerCase();
-      let score = 0;
+    // Search Google Places
+    if (path === '/integrations/google-places/search' && method === 'GET') {
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
       
-      if (name.startsWith(query.toLowerCase())) score += 50;
-      else if (name.includes(query.toLowerCase())) score += 20;
-      
-      for (const keyword of relevantKeywords) {
-        if (name.includes(keyword.toLowerCase())) score += 30;
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
+
+      const query = url.searchParams.get('query');
+      const latitude = url.searchParams.get('latitude');
+      const longitude = url.searchParams.get('longitude');
       
-      return {
-        place_id: place.place_id,
+      if (!query) {
+        return new Response(JSON.stringify({ error: 'Query parameter is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
+      
+      if (!apiKey) {
+        console.error('Google Maps API key not configured');
+        return new Response(JSON.stringify({ error: 'Google Maps API key not configured' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const apiUrl = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
+      apiUrl.searchParams.append('query', query);
+      apiUrl.searchParams.append('key', apiKey);
+      
+      if (latitude && longitude) {
+        apiUrl.searchParams.append('location', `${latitude},${longitude}`);
+        apiUrl.searchParams.append('radius', '50000');
+      }
+
+      const response = await fetch(apiUrl.toString());
+      const data = await response.json();
+
+      if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+        console.error('Google Places API error:', data);
+        return new Response(JSON.stringify({ 
+          error: `Google Places API error: ${data.status}`,
+          details: data.error_message 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Filter results for relevance to event industry
+      const relevantKeywords = [
+        'sound', 'audio', 'lighting', 'stage', 'staging', 'production',
+        'event', 'venue', 'entertainment', 'music', 'concert', 'theater',
+        'theatre', 'show', 'performance', 'rental', 'av', 'pro audio'
+      ];
+
+      const scoredResults = (data.results || []).map((place: any) => {
+        const name = (place.name || '').toLowerCase();
+        let score = 0;
+        
+        if (name.startsWith(query.toLowerCase())) score += 50;
+        else if (name.includes(query.toLowerCase())) score += 20;
+        
+        for (const keyword of relevantKeywords) {
+          if (name.includes(keyword.toLowerCase())) score += 30;
+        }
+        
+        return {
+          place_id: place.place_id,
+          name: place.name,
+          formatted_address: place.formatted_address,
+          types: place.types,
+          score,
+        };
+      });
+
+      const filteredResults = scoredResults.filter((r: any) => r.score >= 0);
+      filteredResults.sort((a: any, b: any) => b.score - a.score);
+      
+      const results = filteredResults.slice(0, 10).map((r: any) => ({
+        place_id: r.place_id,
+        name: r.name,
+        formatted_address: r.formatted_address,
+      }));
+
+      return new Response(JSON.stringify({ results }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Get Google Place details
+    const placesMatch = path.match(/^\/integrations\/google-places\/(.+)$/);
+    if (placesMatch && method === 'GET') {
+      const placeId = placesMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
+      
+      if (!apiKey) {
+        console.error('Google Maps API key not configured');
+        return new Response(JSON.stringify({ error: 'Google Maps API key not configured' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const apiUrl = new URL('https://maps.googleapis.com/maps/api/place/details/json');
+      apiUrl.searchParams.append('place_id', placeId);
+      apiUrl.searchParams.append('fields', 'name,formatted_address,formatted_phone_number,website,address_components,editorial_summary');
+      apiUrl.searchParams.append('key', apiKey);
+
+      const response = await fetch(apiUrl.toString());
+      const data = await response.json();
+
+      if (data.status !== 'OK') {
+        console.error('Google Places API error:', data);
+        return new Response(JSON.stringify({ 
+          error: `Google Places API error: ${data.status}`,
+          details: data.error_message 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const place = data.result;
+      
+      return new Response(JSON.stringify({
+        place_id: place.place_id || placeId,
         name: place.name,
         formatted_address: place.formatted_address,
-        types: place.types,
-        score,
-      };
-    });
-
-    const filteredResults = scoredResults.filter((r: any) => r.score >= 0);
-    filteredResults.sort((a: any, b: any) => b.score - a.score);
-    
-    const results = filteredResults.slice(0, 10).map((r: any) => ({
-      place_id: r.place_id,
-      name: r.name,
-      formatted_address: r.formatted_address,
-    }));
-
-    return c.json({ results });
-  } catch (error) {
-    console.error('Error in Google Places search:', error);
-    return c.json({ error: 'Internal server error while searching places' }, 500);
-  }
-});
-
-// Get Google Place details
-app.get("/integrations/google-places/:placeId", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  const placeId = c.req.param('placeId');
-  const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
-  
-  if (!apiKey) {
-    console.error('Google Maps API key not configured');
-    return c.json({ error: 'Google Maps API key not configured' }, 500);
-  }
-
-  try {
-    const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
-    url.searchParams.append('place_id', placeId);
-    url.searchParams.append('fields', 'name,formatted_address,formatted_phone_number,website,address_components,editorial_summary');
-    url.searchParams.append('key', apiKey);
-
-    const response = await fetch(url.toString());
-    const data = await response.json();
-
-    if (data.status !== 'OK') {
-      console.error('Google Places API error:', data);
-      return c.json({ 
-        error: `Google Places API error: ${data.status}`,
-        details: data.error_message 
-      }, 500);
+        formatted_phone_number: place.formatted_phone_number,
+        website: place.website,
+        editorial_summary: place.editorial_summary?.overview,
+        address_components: place.address_components || [],
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const place = data.result;
-    
-    return c.json({
-      place_id: place.place_id || placeId,
-      name: place.name,
-      formatted_address: place.formatted_address,
-      formatted_phone_number: place.formatted_phone_number,
-      website: place.website,
-      editorial_summary: place.editorial_summary?.overview,
-      address_components: place.address_components || [],
+    // 404 - Route not found
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+
   } catch (error) {
-    console.error('Error in Google Places details fetch:', error);
-    return c.json({ error: 'Internal server error while fetching place details' }, 500);
+    console.error('Server error:', error);
+    return new Response(JSON.stringify({ error: 'Internal server error', details: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
-
-Deno.serve(app.fetch);
