@@ -216,7 +216,7 @@ export default function CreateGigScreen({
       id: 'current-org',
       organization_id: organization.id,
       organization_name: organization.name,
-      role: organization.type,
+      role: organization.type, // Use organization type as role
       notes: '',
     },
   ]);
@@ -310,15 +310,10 @@ export default function CreateGigScreen({
         amount_paid: gig.amount_paid ? gig.amount_paid.toString() : '',
       });
 
-      // Load participants
-      const { data: participantsData } = await supabase
-        .from('gig_participants')
-        .select('*, organization:organization_id(*)')
-        .eq('gig_id', gigId);
-
-      if (participantsData && participantsData.length > 0) {
-        const loadedParticipants: ParticipantData[] = participantsData.map(p => ({
-          id: p.id || Math.random().toString(36).substr(2, 9),
+      // Load participants from the gig response
+      if (gig.participants && gig.participants.length > 0) {
+        const loadedParticipants: ParticipantData[] = gig.participants.map((p: any) => ({
+          id: p.id || Math.random().toString(36).substr(2, 9), // Use database ID
           organization_id: p.organization_id,
           organization_name: p.organization?.name || '',
           organization: p.organization || null,
@@ -344,17 +339,17 @@ export default function CreateGigScreen({
       if (slotsData && slotsData.length > 0) {
         const loadedSlots: StaffSlotData[] = slotsData.map(s => {
           const assignments: StaffAssignmentData[] = (s.assignments || []).map((a: any) => ({
-            id: a.id || Math.random().toString(36).substr(2, 9),
+            id: a.id || Math.random().toString(36).substr(2, 9), // Use database ID
             user_id: a.user_id || '',
             user_name: a.user ? `${a.user.first_name} ${a.user.last_name}`.trim() : '',
             status: a.status || 'Requested',
-            compensation_type: a.rate ? 'rate' : 'fee',
+            compensation_type: a.rate ? 'rate' : (a.fee ? 'fee' : 'rate'),
             amount: (a.rate || a.fee || '').toString(),
             notes: a.notes || '',
           }));
 
           return {
-            id: s.id || Math.random().toString(36).substr(2, 9),
+            id: s.id || Math.random().toString(36).substr(2, 9), // Use database ID
             role: s.staff_role?.name || '',
             count: s.required_count || 1,
             notes: s.notes || '',
@@ -387,6 +382,25 @@ export default function CreateGigScreen({
   const validateForm = (): boolean => {
     try {
       gigSchema.parse(formData);
+      
+      // Additional validation for participants
+      const invalidParticipants = participants.filter(p => {
+        // Skip current org as it's always valid
+        if (p.id === 'current-org') return false;
+        
+        // Check if participant has role but no organization, or organization but no role
+        const hasRole = p.role && p.role.trim() !== '';
+        const hasOrg = p.organization_id && p.organization_id.trim() !== '';
+        
+        // Invalid if has one but not the other
+        return (hasRole && !hasOrg) || (!hasRole && hasOrg);
+      });
+
+      if (invalidParticipants.length > 0) {
+        setErrors({ general: 'All participants must have both a role and an organization selected, or neither. Please remove incomplete participant rows or complete them.' });
+        return false;
+      }
+      
       setErrors({});
       return true;
     } catch (error) {
@@ -579,7 +593,40 @@ export default function CreateGigScreen({
       };
 
       if (isEditMode) {
-        // Update existing gig
+        // Update existing gig - send full participants and staff data with IDs
+        // Database UUIDs are 36 chars, client-generated IDs are 9 chars or prefixed with 'temp-' or 'current-org'
+        const isDbId = (id: string) => id.length === 36 && id.includes('-');
+
+        gigData.participants = participants
+          .filter(p => p.organization_id && p.organization_id.trim() !== '' && p.role && p.role.trim() !== '')
+          .map(p => ({
+            id: (p.id !== 'current-org' && isDbId(p.id)) ? p.id : undefined, // Only send database IDs
+            organization_id: p.organization_id,
+            role: p.role,
+            notes: p.notes || null,
+          }));
+
+        gigData.staff_slots = staffSlots
+          .filter(s => s.role && s.role.trim() !== '')
+          .map(s => ({
+            id: isDbId(s.id) ? s.id : undefined, // Only send database IDs
+            role: s.role,
+            count: s.count,
+            notes: s.notes || null,
+            assignments: s.assignments
+              .filter(a => a.user_id && a.user_id.trim() !== '')
+              .map(a => ({
+                id: isDbId(a.id) ? a.id : undefined, // Only send database IDs
+                user_id: a.user_id,
+                status: a.status,
+                rate: a.compensation_type === 'rate' ? (a.amount ? parseFloat(a.amount) : null) : null,
+                fee: a.compensation_type === 'fee' ? (a.amount ? parseFloat(a.amount) : null) : null,
+                notes: a.notes || null,
+              })),
+          }));
+
+        console.log('Updating gig with data:', JSON.stringify(gigData, null, 2));
+
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/gigs/${gigId}`,
           {
@@ -594,6 +641,7 @@ export default function CreateGigScreen({
 
         if (!response.ok) {
           const errorData = await response.json();
+          console.error('Update gig error response:', errorData);
           throw new Error(errorData.error || 'Failed to update gig');
         }
 
@@ -604,26 +652,41 @@ export default function CreateGigScreen({
       } else {
         // Create new gig
         gigData.primary_organization_id = organization.id;
+        
+        // Filter and validate participants - exclude current org and ensure they have both org and role
         gigData.participants = participants
-          .filter(p => p.id !== 'current-org' && p.organization_id)
+          .filter(p => 
+            p.id !== 'current-org' && 
+            p.organization_id && 
+            p.organization_id.trim() !== '' &&
+            p.role && 
+            p.role.trim() !== ''
+          )
           .map(p => ({
             organization_id: p.organization_id,
             role: p.role,
             notes: p.notes || null,
           }));
-        gigData.staff_slots = staffSlots.map(s => ({
-          role: s.role,
-          count: s.count,
-          notes: s.notes || null,
-          assignments: s.assignments.map(a => ({
-            user_id: a.user_id,
-            status: a.status,
-            compensation_type: a.compensation_type,
-            rate: a.compensation_type === 'rate' ? (a.amount ? parseFloat(a.amount) : null) : null,
-            fee: a.compensation_type === 'fee' ? (a.amount ? parseFloat(a.amount) : null) : null,
-            notes: a.notes || null,
-          })),
-        }));
+        
+        // Filter staff slots and assignments - only include complete data
+        gigData.staff_slots = staffSlots
+          .filter(s => s.role && s.role.trim() !== '')
+          .map(s => ({
+            role: s.role,
+            count: s.count,
+            notes: s.notes || null,
+            assignments: s.assignments
+              .filter(a => a.user_id && a.user_id.trim() !== '')
+              .map(a => ({
+                user_id: a.user_id,
+                status: a.status,
+                rate: a.compensation_type === 'rate' ? (a.amount ? parseFloat(a.amount) : null) : null,
+                fee: a.compensation_type === 'fee' ? (a.amount ? parseFloat(a.amount) : null) : null,
+                notes: a.notes || null,
+              })),
+          }));
+
+        console.log('Creating gig with data:', JSON.stringify(gigData, null, 2));
 
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/gigs`,
@@ -639,6 +702,7 @@ export default function CreateGigScreen({
 
         if (!response.ok) {
           const errorData = await response.json();
+          console.error('Create gig error response:', errorData);
           throw new Error(errorData.error || 'Failed to create gig');
         }
 

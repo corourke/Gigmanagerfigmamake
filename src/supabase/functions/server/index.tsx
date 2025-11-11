@@ -528,20 +528,15 @@ app.get("/make-server-de012ad4/gigs/:id", async (c) => {
       return c.json({ error: 'Access denied' }, 403);
     }
 
-    // Fetch participants
+    // Fetch full participant data with organization details
     const { data: participants } = await supabaseAdmin
       .from('gig_participants')
       .select('*, organization:organization_id(*)')
       .eq('gig_id', gig.id);
 
-    // Find venue and act from participants
-    const venue = participants?.find(p => p.role === 'Venue')?.organization;
-    const act = participants?.find(p => p.role === 'Act')?.organization;
-
     return c.json({
       ...gig,
-      venue,
-      act,
+      participants: participants || [],
     });
   } catch (error) {
     console.error('Error in gig fetch:', error);
@@ -574,16 +569,22 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
     } = body;
 
     // Verify user has permission to create gigs (must be Admin or Manager in at least one org)
+    let primaryOrgType = 'Production'; // Default fallback
     if (primary_organization_id) {
       const { data: membership } = await supabaseAdmin
         .from('organization_members')
-        .select('*')
+        .select('*, organization:organizations(type)')
         .eq('organization_id', primary_organization_id)
         .eq('user_id', user.id)
         .single();
 
       if (!membership || (membership.role !== 'Admin' && membership.role !== 'Manager')) {
         return c.json({ error: 'Insufficient permissions. Only Admins and Managers can create gigs.' }, 403);
+      }
+
+      // Get the organization type for the default role
+      if (membership.organization && membership.organization.type) {
+        primaryOrgType = membership.organization.type;
       }
     }
 
@@ -608,32 +609,23 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
     }
 
     // Create participants (including the primary organization if provided)
-    const participantsToInsert = [];
+    const participantsToInsert: Array<{
+      gig_id: string;
+      organization_id: string;
+      role: string;
+      notes?: string | null;
+    }> = [];
     
     if (primary_organization_id) {
       participantsToInsert.push({
         gig_id: gig.id,
         organization_id: primary_organization_id,
-        role: 'Production', // Default role for primary org
+        role: primaryOrgType, // Use the organization's type as the default role
+        notes: null,
       });
     }
     
-    if (venue_id) {
-      participantsToInsert.push({ 
-        gig_id: gig.id, 
-        organization_id: venue_id, 
-        role: 'Venue',
-      });
-    }
-    if (act_id) {
-      participantsToInsert.push({ 
-        gig_id: gig.id, 
-        organization_id: act_id, 
-        role: 'Act',
-      });
-    }
-    
-    // Add additional participants (sound, lighting, etc.)
+    // Add all participants from the participants array
     participants.forEach((p: any) => {
       if (p.organization_id && p.role) {
         participantsToInsert.push({
@@ -772,7 +764,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
 
   try {
     const body = await c.req.json();
-    const { venue_id, act_id, ...gigData } = body;
+    const { venue_id, act_id, participants, staff_slots, ...gigData } = body;
 
     // Get existing gig and verify access through participants
     const { data: gig } = await supabaseAdmin
@@ -821,47 +813,260 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
       return c.json({ error: error.message }, 400);
     }
 
-    // Update participants if venue_id or act_id changed
-    if (venue_id !== undefined) {
-      // Delete existing venue participant
-      await supabaseAdmin
+    // Handle participants update if provided
+    if (participants !== undefined) {
+      // Get existing participants
+      const { data: existingParticipants } = await supabaseAdmin
         .from('gig_participants')
-        .delete()
-        .eq('gig_id', gigId)
-        .eq('role', 'Venue');
+        .select('id, organization_id, role')
+        .eq('gig_id', gigId);
 
-      // Add new venue participant if provided
-      if (venue_id) {
+      const existingIds = new Set((existingParticipants || []).map(p => p.id));
+      const incomingParticipants = participants
+        .filter((p: any) => p.organization_id && p.role)
+        .map((p: any) => ({
+          id: p.id || null,
+          organization_id: p.organization_id,
+          role: p.role,
+          notes: p.notes || null,
+        }));
+
+      const incomingIds = new Set(incomingParticipants.filter((p: any) => p.id).map((p: any) => p.id));
+
+      // Delete participants that are no longer present
+      const idsToDelete = Array.from(existingIds).filter(id => !incomingIds.has(id));
+      if (idsToDelete.length > 0) {
         await supabaseAdmin
           .from('gig_participants')
-          .insert({ gig_id: gigId, organization_id: venue_id, role: 'Venue' });
+          .delete()
+          .in('id', idsToDelete);
+      }
+
+      // Update existing participants and insert new ones
+      for (const p of incomingParticipants) {
+        if (p.id && existingIds.has(p.id)) {
+          // Update existing participant
+          await supabaseAdmin
+            .from('gig_participants')
+            .update({
+              organization_id: p.organization_id,
+              role: p.role,
+              notes: p.notes,
+            })
+            .eq('id', p.id);
+        } else {
+          // Insert new participant
+          await supabaseAdmin
+            .from('gig_participants')
+            .insert({
+              gig_id: gigId,
+              organization_id: p.organization_id,
+              role: p.role,
+              notes: p.notes,
+            });
+        }
+      }
+    } else {
+      // Legacy support for venue_id and act_id
+      if (venue_id !== undefined) {
+        // Delete existing venue participant
+        await supabaseAdmin
+          .from('gig_participants')
+          .delete()
+          .eq('gig_id', gigId)
+          .eq('role', 'Venue');
+
+        // Add new venue participant if provided
+        if (venue_id) {
+          await supabaseAdmin
+            .from('gig_participants')
+            .insert({ gig_id: gigId, organization_id: venue_id, role: 'Venue' });
+        }
+      }
+
+      if (act_id !== undefined) {
+        // Delete existing act participant
+        await supabaseAdmin
+          .from('gig_participants')
+          .delete()
+          .eq('gig_id', gigId)
+          .eq('role', 'Act');
+
+        // Add new act participant if provided
+        if (act_id) {
+          await supabaseAdmin
+            .from('gig_participants')
+            .insert({ gig_id: gigId, organization_id: act_id, role: 'Act' });
+        }
       }
     }
 
-    if (act_id !== undefined) {
-      // Delete existing act participant
-      await supabaseAdmin
-        .from('gig_participants')
-        .delete()
-        .eq('gig_id', gigId)
-        .eq('role', 'Act');
+    // Handle staff slots update if provided
+    if (staff_slots !== undefined) {
+      // Get existing staff slots with assignments
+      const { data: existingSlots } = await supabaseAdmin
+        .from('gig_staff_slots')
+        .select('id, staff_role_id, organization_id, required_count, notes, assignments:gig_staff_assignments(id, user_id, status, rate, fee, notes)')
+        .eq('gig_id', gigId);
 
-      // Add new act participant if provided
-      if (act_id) {
+      const existingSlotIds = new Set((existingSlots || []).map(s => s.id));
+      const incomingSlots = staff_slots.filter((s: any) => s.role && s.role.trim() !== '');
+
+      // Process each incoming slot
+      const processedSlotIds = new Set();
+
+      for (const slot of incomingSlots) {
+        // Get or create staff role
+        let staffRoleId = null;
+        const { data: existingRole } = await supabaseAdmin
+          .from('staff_roles')
+          .select('id')
+          .eq('name', slot.role)
+          .maybeSingle();
+
+        staffRoleId = existingRole?.id;
+
+        if (!staffRoleId) {
+          const { data: newRole, error: roleError } = await supabaseAdmin
+            .from('staff_roles')
+            .insert({ name: slot.role })
+            .select('id')
+            .single();
+
+          if (!roleError && newRole) {
+            staffRoleId = newRole.id;
+          }
+        }
+
+        if (!staffRoleId) {
+          console.error('Could not create or find staff role for:', slot.role);
+          continue;
+        }
+
+        let slotId = slot.id;
+
+        // Check if this slot exists
+        if (slotId && existingSlotIds.has(slotId)) {
+          // Update existing slot
+          await supabaseAdmin
+            .from('gig_staff_slots')
+            .update({
+              staff_role_id: staffRoleId,
+              organization_id: slot.organization_id || null,
+              required_count: slot.count || slot.required_count || 1,
+              notes: slot.notes || null,
+            })
+            .eq('id', slotId);
+          
+          processedSlotIds.add(slotId);
+        } else {
+          // Insert new slot
+          const { data: newSlot, error: slotError } = await supabaseAdmin
+            .from('gig_staff_slots')
+            .insert({
+              gig_id: gigId,
+              staff_role_id: staffRoleId,
+              organization_id: slot.organization_id || null,
+              required_count: slot.count || slot.required_count || 1,
+              notes: slot.notes || null,
+            })
+            .select('id')
+            .single();
+
+          if (slotError) {
+            console.error('Error creating staff slot:', slotError);
+            continue;
+          }
+
+          slotId = newSlot.id;
+          processedSlotIds.add(slotId);
+        }
+
+        // Handle assignments for this slot
+        if (slot.assignments && slot.assignments.length > 0) {
+          // Get existing assignments for this slot
+          const { data: existingAssignments } = await supabaseAdmin
+            .from('gig_staff_assignments')
+            .select('id, user_id')
+            .eq('gig_staff_slot_id', slotId);
+
+          const existingAssignmentIds = new Set((existingAssignments || []).map(a => a.id));
+          const incomingAssignments = slot.assignments.filter((a: any) => a.user_id && a.user_id.trim() !== '');
+          const processedAssignmentIds = new Set();
+
+          // Process each assignment
+          for (const assignment of incomingAssignments) {
+            if (assignment.id && existingAssignmentIds.has(assignment.id)) {
+              // Update existing assignment
+              await supabaseAdmin
+                .from('gig_staff_assignments')
+                .update({
+                  user_id: assignment.user_id,
+                  status: assignment.status || 'Requested',
+                  rate: assignment.rate || null,
+                  fee: assignment.fee || null,
+                  notes: assignment.notes || null,
+                })
+                .eq('id', assignment.id);
+              
+              processedAssignmentIds.add(assignment.id);
+            } else {
+              // Insert new assignment
+              const { data: newAssignment } = await supabaseAdmin
+                .from('gig_staff_assignments')
+                .insert({
+                  gig_staff_slot_id: slotId,
+                  user_id: assignment.user_id,
+                  status: assignment.status || 'Requested',
+                  rate: assignment.rate || null,
+                  fee: assignment.fee || null,
+                  notes: assignment.notes || null,
+                })
+                .select('id')
+                .single();
+
+              if (newAssignment) {
+                processedAssignmentIds.add(newAssignment.id);
+              }
+            }
+          }
+
+          // Delete assignments that are no longer present
+          const assignmentIdsToDelete = Array.from(existingAssignmentIds).filter(id => !processedAssignmentIds.has(id));
+          if (assignmentIdsToDelete.length > 0) {
+            await supabaseAdmin
+              .from('gig_staff_assignments')
+              .delete()
+              .in('id', assignmentIdsToDelete);
+          }
+        } else {
+          // No assignments provided, delete all existing assignments for this slot
+          await supabaseAdmin
+            .from('gig_staff_assignments')
+            .delete()
+            .eq('gig_staff_slot_id', slotId);
+        }
+      }
+
+      // Delete slots that are no longer present
+      const slotIdsToDelete = Array.from(existingSlotIds).filter(id => !processedSlotIds.has(id));
+      if (slotIdsToDelete.length > 0) {
+        // Assignments will be deleted via cascade
         await supabaseAdmin
-          .from('gig_participants')
-          .insert({ gig_id: gigId, organization_id: act_id, role: 'Act' });
+          .from('gig_staff_slots')
+          .delete()
+          .in('id', slotIdsToDelete);
       }
     }
 
     // Fetch participants
-    const { data: participants } = await supabaseAdmin
+    const { data: updatedParticipants } = await supabaseAdmin
       .from('gig_participants')
       .select('*, organization:organization_id(*)')
       .eq('gig_id', gigId);
 
-    const venue = participants?.find(p => p.role === 'Venue')?.organization;
-    const act = participants?.find(p => p.role === 'Act')?.organization;
+    const venue = updatedParticipants?.find(p => p.role === 'Venue')?.organization;
+    const act = updatedParticipants?.find(p => p.role === 'Act')?.organization;
 
     return c.json({
       ...updatedGig,
