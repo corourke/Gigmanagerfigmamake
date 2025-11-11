@@ -275,6 +275,33 @@ AS $$
   );
 $$;
 
+-- Helper function to get organization IDs a user belongs to (bypasses RLS)
+CREATE OR REPLACE FUNCTION user_organization_ids(user_uuid UUID)
+RETURNS TABLE(organization_id UUID)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT organization_id 
+  FROM organization_members
+  WHERE user_id = user_uuid;
+$$;
+
+-- Helper function to check if user is Admin or Manager (bypasses RLS)
+CREATE OR REPLACE FUNCTION user_is_admin_or_manager_of_org(org_id UUID, user_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM organization_members
+    WHERE organization_id = org_id 
+    AND user_id = user_uuid
+    AND role IN ('Admin', 'Manager')
+  );
+$$;
+
 -- Users policies
 CREATE POLICY "Users can view their own profile" ON users
   FOR SELECT USING (auth.uid() = id);
@@ -287,16 +314,12 @@ CREATE POLICY "Users can insert their own profile" ON users
 
 CREATE POLICY "Users can view other user profiles" ON users
   FOR SELECT USING (
-    -- Users can always see their own profile
     auth.uid() = id
     OR
-    -- Users can see profiles of users who share at least one organization
-    -- Use the helper function to avoid recursion
     EXISTS (
       SELECT 1 
-      FROM organization_members om
-      WHERE om.user_id = users.id
-      AND user_is_member_of_org(om.organization_id, auth.uid())
+      FROM user_organization_ids(users.id) AS target_orgs
+      WHERE user_is_member_of_org(target_orgs.organization_id, auth.uid())
     )
   );
 
@@ -329,52 +352,24 @@ CREATE POLICY "Anyone can view staff roles" ON staff_roles
 
 -- Gigs policies
 CREATE POLICY "Users can view gigs from their organizations" ON gigs
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = gigs.organization_id
-      AND user_id = auth.uid()
-    )
-  );
+  FOR SELECT USING (user_is_member_of_org(gigs.organization_id, auth.uid()));
 
 CREATE POLICY "Admins and Managers can create gigs" ON gigs
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = gigs.organization_id
-      AND user_id = auth.uid()
-      AND role IN ('Admin', 'Manager')
-    )
-  );
+  FOR INSERT WITH CHECK (user_is_admin_or_manager_of_org(gigs.organization_id, auth.uid()));
 
 CREATE POLICY "Admins and Managers can update gigs" ON gigs
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = gigs.organization_id
-      AND user_id = auth.uid()
-      AND role IN ('Admin', 'Manager')
-    )
-  );
+  FOR UPDATE USING (user_is_admin_or_manager_of_org(gigs.organization_id, auth.uid()));
 
 CREATE POLICY "Admins can delete gigs" ON gigs
-  FOR DELETE USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = gigs.organization_id
-      AND user_id = auth.uid()
-      AND role = 'Admin'
-    )
-  );
+  FOR DELETE USING (user_is_admin_of_org(gigs.organization_id, auth.uid()));
 
 -- Gig status history policies
 CREATE POLICY "Users can view status history for accessible gigs" ON gig_status_history
   FOR SELECT USING (
     EXISTS (
       SELECT 1 FROM gigs g
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE g.id = gig_status_history.gig_id
-      AND om.user_id = auth.uid()
+      AND user_is_member_of_org(g.organization_id, auth.uid())
     )
   );
 
@@ -383,9 +378,8 @@ CREATE POLICY "Users can view participants for accessible gigs" ON gig_participa
   FOR SELECT USING (
     EXISTS (
       SELECT 1 FROM gigs g
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE g.id = gig_participants.gig_id
-      AND om.user_id = auth.uid()
+      AND user_is_member_of_org(g.organization_id, auth.uid())
     )
   );
 
@@ -393,10 +387,8 @@ CREATE POLICY "Admins and Managers can manage participants" ON gig_participants
   FOR ALL USING (
     EXISTS (
       SELECT 1 FROM gigs g
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE g.id = gig_participants.gig_id
-      AND om.user_id = auth.uid()
-      AND om.role IN ('Admin', 'Manager')
+      AND user_is_admin_or_manager_of_org(g.organization_id, auth.uid())
     )
   );
 
@@ -405,9 +397,8 @@ CREATE POLICY "Users can view staff slots for accessible gigs" ON gig_staff_slot
   FOR SELECT USING (
     EXISTS (
       SELECT 1 FROM gigs g
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE g.id = gig_staff_slots.gig_id
-      AND om.user_id = auth.uid()
+      AND user_is_member_of_org(g.organization_id, auth.uid())
     )
   );
 
@@ -415,10 +406,8 @@ CREATE POLICY "Admins and Managers can manage staff slots" ON gig_staff_slots
   FOR ALL USING (
     EXISTS (
       SELECT 1 FROM gigs g
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE g.id = gig_staff_slots.gig_id
-      AND om.user_id = auth.uid()
-      AND om.role IN ('Admin', 'Manager')
+      AND user_is_admin_or_manager_of_org(g.organization_id, auth.uid())
     )
   );
 
@@ -428,9 +417,8 @@ CREATE POLICY "Users can view staff assignments for accessible gigs" ON gig_staf
     EXISTS (
       SELECT 1 FROM gig_staff_slots gs
       JOIN gigs g ON g.id = gs.gig_id
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE gs.id = gig_staff_assignments.slot_id
-      AND om.user_id = auth.uid()
+      AND user_is_member_of_org(g.organization_id, auth.uid())
     )
   );
 
@@ -439,10 +427,8 @@ CREATE POLICY "Admins and Managers can manage staff assignments" ON gig_staff_as
     EXISTS (
       SELECT 1 FROM gig_staff_slots gs
       JOIN gigs g ON g.id = gs.gig_id
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE gs.id = gig_staff_assignments.slot_id
-      AND om.user_id = auth.uid()
-      AND om.role IN ('Admin', 'Manager')
+      AND user_is_admin_or_manager_of_org(g.organization_id, auth.uid())
     )
   );
 
@@ -451,9 +437,8 @@ CREATE POLICY "Users can view bids for accessible gigs" ON gig_bids
   FOR SELECT USING (
     EXISTS (
       SELECT 1 FROM gigs g
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE g.id = gig_bids.gig_id
-      AND om.user_id = auth.uid()
+      AND user_is_member_of_org(g.organization_id, auth.uid())
     )
   );
 
@@ -461,52 +446,24 @@ CREATE POLICY "Admins and Managers can manage bids" ON gig_bids
   FOR ALL USING (
     EXISTS (
       SELECT 1 FROM gigs g
-      JOIN organization_members om ON om.organization_id = g.organization_id
       WHERE g.id = gig_bids.gig_id
-      AND om.user_id = auth.uid()
-      AND om.role IN ('Admin', 'Manager')
+      AND user_is_admin_or_manager_of_org(g.organization_id, auth.uid())
     )
   );
 
 -- Organization annotations policies
 CREATE POLICY "Users can view their organization's annotations" ON org_annotations
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = org_annotations.organization_id
-      AND user_id = auth.uid()
-    )
-  );
+  FOR SELECT USING (user_is_member_of_org(org_annotations.organization_id, auth.uid()));
 
 CREATE POLICY "Admins and Managers can manage annotations" ON org_annotations
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = org_annotations.organization_id
-      AND user_id = auth.uid()
-      AND role IN ('Admin', 'Manager')
-    )
-  );
+  FOR ALL USING (user_is_admin_or_manager_of_org(org_annotations.organization_id, auth.uid()));
 
 -- Assets policies
 CREATE POLICY "Users can view their organization's assets" ON assets
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = assets.organization_id
-      AND user_id = auth.uid()
-    )
-  );
+  FOR SELECT USING (user_is_member_of_org(assets.organization_id, auth.uid()));
 
 CREATE POLICY "Admins and Managers can manage assets" ON assets
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = assets.organization_id
-      AND user_id = auth.uid()
-      AND role IN ('Admin', 'Manager')
-    )
-  );
+  FOR ALL USING (user_is_admin_or_manager_of_org(assets.organization_id, auth.uid()));
 
 -- ============================================
 -- FUNCTIONS AND TRIGGERS
