@@ -7,7 +7,7 @@ import { Separator } from './ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Building2, AlertCircle, Loader2, Mail, Lock } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getUserProfile, createUserProfile, getUserOrganizations } from '../utils/api';
 import type { User, OrganizationMembership } from '../App';
 import { MOCK_USER, MOCK_ORGANIZATIONS } from '../utils/mock-data';
 
@@ -231,56 +231,6 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
       setError(err.message || 'Authentication failed. Please try again.');
       setIsLoading(false);
     }
-  };
-
-  const getUserProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (error) {
-      console.error('Error fetching user profile:', error);
-      return null;
-    }
-
-    return data;
-  };
-
-  const createUserProfile = async (profile: {
-    id: string;
-    email: string;
-    first_name: string;
-    last_name: string;
-    avatar_url: string;
-  }) => {
-    const { data, error } = await supabase
-      .from('users')
-      .insert([profile])
-      .select('*')
-      .single();
-
-    if (error) {
-      console.error('Error creating user profile:', error);
-      throw new Error(error.message);
-    }
-
-    return data;
-  };
-
-  const getUserOrganizations = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('organization_members')
-      .select('*, organization:organizations(*)')
-      .eq('user_id', userId);
-
-    if (error) {
-      console.error('Error fetching user organizations:', error);
-      throw new Error(error.message);
-    }
-
-    return data || [];
   };
 
   return (

@@ -241,53 +241,11 @@ ALTER TABLE gig_bids ENABLE ROW LEVEL SECURITY;
 ALTER TABLE org_annotations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 
--- Users policies
-CREATE POLICY "Users can view their own profile" ON users
-  FOR SELECT USING (auth.uid() = id);
-
-CREATE POLICY "Users can update their own profile" ON users
-  FOR UPDATE USING (auth.uid() = id);
-
-CREATE POLICY "Users can view other user profiles" ON users
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM organization_members om1
-      WHERE om1.user_id = auth.uid()
-      AND EXISTS (
-        SELECT 1 FROM organization_members om2
-        WHERE om2.user_id = users.id
-        AND om2.organization_id = om1.organization_id
-      )
-    )
-  );
-
--- Organizations policies
-CREATE POLICY "Users can view organizations they belong to" ON organizations
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = organizations.id
-      AND user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "Users can view all organizations for participant selection" ON organizations
-  FOR SELECT USING (true);
-
-CREATE POLICY "Admins can update their organizations" ON organizations
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM organization_members
-      WHERE organization_id = organizations.id
-      AND user_id = auth.uid()
-      AND role = 'Admin'
-    )
-  );
-
--- Organization members policies
--- Drop old recursive policies first (in case of re-running migration)
-DROP POLICY IF EXISTS "Users can view members of their organizations" ON organization_members;
-DROP POLICY IF EXISTS "Admins can manage organization members" ON organization_members;
+-- ============================================
+-- HELPER FUNCTIONS FOR RLS POLICIES
+-- ============================================
+-- These SECURITY DEFINER functions bypass RLS to prevent infinite recursion
+-- when policies need to check organization membership
 
 -- Create helper function to check membership (bypasses RLS to avoid recursion)
 CREATE OR REPLACE FUNCTION user_is_member_of_org(org_id UUID, user_uuid UUID)
@@ -316,6 +274,46 @@ AS $$
     AND role = 'Admin'
   );
 $$;
+
+-- Users policies
+CREATE POLICY "Users can view their own profile" ON users
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can update their own profile" ON users
+  FOR UPDATE USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert their own profile" ON users
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "Users can view other user profiles" ON users
+  FOR SELECT USING (
+    -- Users can always see their own profile
+    auth.uid() = id
+    OR
+    -- Users can see profiles of users who share at least one organization
+    -- Use the helper function to avoid recursion
+    EXISTS (
+      SELECT 1 
+      FROM organization_members om
+      WHERE om.user_id = users.id
+      AND user_is_member_of_org(om.organization_id, auth.uid())
+    )
+  );
+
+-- Organizations policies
+CREATE POLICY "Users can view organizations they belong to" ON organizations
+  FOR SELECT USING (user_is_member_of_org(organizations.id, auth.uid()));
+
+CREATE POLICY "Users can view all organizations for participant selection" ON organizations
+  FOR SELECT USING (true);
+
+CREATE POLICY "Admins can update their organizations" ON organizations
+  FOR UPDATE USING (user_is_admin_of_org(organizations.id, auth.uid()));
+
+-- Organization members policies
+-- Drop old recursive policies first (in case of re-running migration)
+DROP POLICY IF EXISTS "Users can view members of their organizations" ON organization_members;
+DROP POLICY IF EXISTS "Admins can manage organization members" ON organization_members;
 
 -- Policy: Users can view members of organizations they belong to (no recursion)
 CREATE POLICY "Users can view members of their organizations" ON organization_members
