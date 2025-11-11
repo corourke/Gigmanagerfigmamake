@@ -318,8 +318,10 @@ CREATE POLICY "Users can view other user profiles" ON users
     OR
     EXISTS (
       SELECT 1 
-      FROM user_organization_ids(users.id) AS target_orgs
-      WHERE user_is_member_of_org(target_orgs.organization_id, auth.uid())
+      FROM organization_members om1
+      JOIN organization_members om2 ON om1.organization_id = om2.organization_id
+      WHERE om1.user_id = users.id
+      AND om2.user_id = auth.uid()
     )
   );
 
@@ -339,12 +341,27 @@ DROP POLICY IF EXISTS "Users can view members of their organizations" ON organiz
 DROP POLICY IF EXISTS "Admins can manage organization members" ON organization_members;
 
 -- Policy: Users can view members of organizations they belong to (no recursion)
+-- Uses direct self-join instead of helper function to avoid recursion
 CREATE POLICY "Users can view members of their organizations" ON organization_members
-  FOR SELECT USING (user_is_member_of_org(organization_id, auth.uid()));
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = organization_members.organization_id
+      AND om.user_id = auth.uid()
+    )
+  );
 
 -- Policy: Admins can manage members of their organizations (no recursion)
+-- Uses direct self-join instead of helper function to avoid recursion
 CREATE POLICY "Admins can manage organization members" ON organization_members
-  FOR ALL USING (user_is_admin_of_org(organization_id, auth.uid()));
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = organization_members.organization_id
+      AND om.user_id = auth.uid()
+      AND om.role = 'Admin'
+    )
+  );
 
 -- Staff roles policies (global, read by all)
 CREATE POLICY "Anyone can view staff roles" ON staff_roles
