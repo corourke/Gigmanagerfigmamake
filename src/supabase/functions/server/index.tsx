@@ -1,7 +1,7 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { logger } from "hono/logger";
-import { createClient } from "@supabase/supabase-js";
+import { Hono } from "npm:hono";
+import { cors } from "npm:hono/cors";
+import { logger } from "npm:hono/logger";
+import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
 
 const app = new Hono();
 
@@ -20,13 +20,17 @@ app.use(
   }),
 );
 
-// Create Supabase client
+// Create Supabase client with service role key
 const supabaseAdmin = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 );
 
-// Helper to get authenticated user
+// ===== Helper Functions =====
+
+/**
+ * Extract and verify user from auth header
+ */
 async function getAuthenticatedUser(authHeader: string | null) {
   if (!authHeader) {
     return { user: null, error: 'No authorization header' };
@@ -45,15 +49,86 @@ async function getAuthenticatedUser(authHeader: string | null) {
   return { user, error: null };
 }
 
-// Health check endpoint
-app.get("/make-server-de012ad4/health", (c) => {
+/**
+ * Verify user is a member of an organization with specified role(s)
+ */
+async function verifyOrgMembership(
+  userId: string,
+  orgId: string,
+  allowedRoles?: string[]
+) {
+  const { data: membership } = await supabaseAdmin
+    .from('organization_members')
+    .select('*, organization:organizations(*)')
+    .eq('organization_id', orgId)
+    .eq('user_id', userId)
+    .single();
+
+  if (!membership) {
+    return { membership: null, error: 'Not a member of this organization' };
+  }
+
+  if (allowedRoles && !allowedRoles.includes(membership.role)) {
+    return { membership: null, error: 'Insufficient permissions' };
+  }
+
+  return { membership, error: null };
+}
+
+/**
+ * Verify user is a member of any of the specified organizations
+ */
+async function verifyAnyOrgMembership(userId: string, orgIds: string[]) {
+  const { data: membership } = await supabaseAdmin
+    .from('organization_members')
+    .select('*')
+    .in('organization_id', orgIds)
+    .eq('user_id', userId)
+    .limit(1)
+    .single();
+
+  return { membership, error: membership ? null : 'Not a member of any participating organization' };
+}
+
+/**
+ * Get or create staff role by name
+ */
+async function getOrCreateStaffRole(roleName: string) {
+  const { data: existingRole } = await supabaseAdmin
+    .from('staff_roles')
+    .select('id')
+    .eq('name', roleName)
+    .maybeSingle();
+
+  if (existingRole?.id) {
+    return existingRole.id;
+  }
+
+  const { data: newRole, error } = await supabaseAdmin
+    .from('staff_roles')
+    .insert({ name: roleName })
+    .select('id')
+    .single();
+
+  if (error || !newRole) {
+    console.error('Failed to create staff role:', roleName, error);
+    return null;
+  }
+
+  return newRole.id;
+}
+
+// ===== Routes =====
+
+// Health check
+app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
 // ===== User Management =====
 
 // Create user profile after OAuth sign-up
-app.post("/make-server-de012ad4/users", async (c) => {
+app.post("/users", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -102,7 +177,7 @@ app.post("/make-server-de012ad4/users", async (c) => {
 });
 
 // Get user profile
-app.get("/make-server-de012ad4/users/:id", async (c) => {
+app.get("/users/:id", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -125,7 +200,6 @@ app.get("/make-server-de012ad4/users/:id", async (c) => {
     }
 
     if (!data) {
-      console.log('User profile not found:', userId);
       return c.json({ error: 'User profile not found' }, 404);
     }
 
@@ -137,7 +211,7 @@ app.get("/make-server-de012ad4/users/:id", async (c) => {
 });
 
 // Update user profile
-app.put("/make-server-de012ad4/users/:id", async (c) => {
+app.put("/users/:id", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -156,7 +230,6 @@ app.put("/make-server-de012ad4/users/:id", async (c) => {
     const body = await c.req.json();
     const { first_name, last_name, phone, address_line1, address_line2, city, state, postal_code, country } = body;
 
-    // Update user profile
     const { data, error } = await supabaseAdmin
       .from('users')
       .update({
@@ -188,7 +261,7 @@ app.put("/make-server-de012ad4/users/:id", async (c) => {
 });
 
 // Search users (for staff assignment)
-app.get("/make-server-de012ad4/users", async (c) => {
+app.get("/users", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -196,7 +269,7 @@ app.get("/make-server-de012ad4/users", async (c) => {
     return c.json({ error: authError ?? 'Unauthorized' }, 401);
   }
 
-  const search = c.req.query('search'); // Search by name or email
+  const search = c.req.query('search');
 
   try {
     let query = supabaseAdmin
@@ -222,10 +295,8 @@ app.get("/make-server-de012ad4/users", async (c) => {
   }
 });
 
-// ===== Organization Management =====
-
 // Get user's organizations
-app.get("/make-server-de012ad4/users/:userId/organizations", async (c) => {
+app.get("/users/:userId/organizations", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -253,8 +324,50 @@ app.get("/make-server-de012ad4/users/:userId/organizations", async (c) => {
   }
 });
 
+// ===== Organization Management =====
+
+// Search organizations (for participant selection)
+app.get("/organizations", async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const { user, error: authError } = await getAuthenticatedUser(authHeader);
+  
+  if (authError || !user) {
+    return c.json({ error: authError ?? 'Unauthorized' }, 401);
+  }
+
+  const type = c.req.query('type');
+  const search = c.req.query('search');
+
+  try {
+    let query = supabaseAdmin
+      .from('organizations')
+      .select('*')
+      .order('name');
+
+    if (type) {
+      query = query.eq('type', type);
+    }
+
+    if (search) {
+      query = query.ilike('name', `%${search}%`);
+    }
+
+    const { data, error } = await query.limit(20);
+
+    if (error) {
+      console.error('Error fetching organizations:', error);
+      return c.json({ error: error.message }, 400);
+    }
+
+    return c.json(data);
+  } catch (error) {
+    console.error('Error in organizations fetch:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Create organization
-app.post("/make-server-de012ad4/organizations", async (c) => {
+app.post("/organizations", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -301,7 +414,7 @@ app.post("/make-server-de012ad4/organizations", async (c) => {
 });
 
 // Join an existing organization
-app.post("/make-server-de012ad4/organizations/:orgId/join", async (c) => {
+app.post("/organizations/:id/members", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -309,7 +422,7 @@ app.post("/make-server-de012ad4/organizations/:orgId/join", async (c) => {
     return c.json({ error: authError ?? 'Unauthorized' }, 401);
   }
 
-  const orgId = c.req.param('orgId');
+  const orgId = c.req.param('id');
 
   try {
     // Check if organization exists
@@ -358,50 +471,10 @@ app.post("/make-server-de012ad4/organizations/:orgId/join", async (c) => {
   }
 });
 
-// Get organizations (for venue/act selection)
-app.get("/make-server-de012ad4/organizations", async (c) => {
-  const authHeader = c.req.header('Authorization');
-  const { user, error: authError } = await getAuthenticatedUser(authHeader);
-  
-  if (authError || !user) {
-    return c.json({ error: authError ?? 'Unauthorized' }, 401);
-  }
-
-  const type = c.req.query('type'); // Optional filter by type
-  const search = c.req.query('search'); // Optional search by name
-
-  try {
-    let query = supabaseAdmin
-      .from('organizations')
-      .select('*')
-      .order('name');
-
-    if (type) {
-      query = query.eq('type', type);
-    }
-
-    if (search) {
-      query = query.ilike('name', `%${search}%`);
-    }
-
-    const { data, error } = await query.limit(20);
-
-    if (error) {
-      console.error('Error fetching organizations:', error);
-      return c.json({ error: error.message }, 400);
-    }
-
-    return c.json(data);
-  } catch (error) {
-    console.error('Error in organizations fetch:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
 // ===== Gig Management =====
 
-// Get gigs for organization (with RLS-like filtering)
-app.get("/make-server-de012ad4/gigs", async (c) => {
+// Get gigs for organization
+app.get("/gigs", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -417,15 +490,9 @@ app.get("/make-server-de012ad4/gigs", async (c) => {
 
   try {
     // Verify user has access to this organization
-    const { data: membership } = await supabaseAdmin
-      .from('organization_members')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!membership) {
-      return c.json({ error: 'Access denied to this organization' }, 403);
+    const { error: membershipError } = await verifyOrgMembership(user.id, organizationId);
+    if (membershipError) {
+      return c.json({ error: membershipError }, 403);
     }
 
     // Fetch gigs where this organization is a participant
@@ -439,7 +506,7 @@ app.get("/make-server-de012ad4/gigs", async (c) => {
       return c.json({ error: error.message }, 400);
     }
 
-    // Extract unique gigs and fetch additional participants for each
+    // Extract unique gigs
     const gigsMap = new Map();
     for (const gp of gigParticipants || []) {
       if (gp.gig) {
@@ -457,7 +524,7 @@ app.get("/make-server-de012ad4/gigs", async (c) => {
           .select('*, organization:organization_id(*)')
           .eq('gig_id', gig.id);
 
-        // Find venue and act from participants
+        // Legacy support: find venue and act from participants
         const venue = participants?.find(p => p.role === 'Venue')?.organization;
         const act = participants?.find(p => p.role === 'Act')?.organization;
 
@@ -482,7 +549,7 @@ app.get("/make-server-de012ad4/gigs", async (c) => {
 });
 
 // Get single gig
-app.get("/make-server-de012ad4/gigs/:id", async (c) => {
+app.get("/gigs/:id", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -514,18 +581,10 @@ app.get("/make-server-de012ad4/gigs/:id", async (c) => {
       return c.json({ error: 'Access denied' }, 403);
     }
 
-    // Check if user is member of any participating organization
     const orgIds = gigParticipants.map(gp => gp.organization_id);
-    const { data: membership } = await supabaseAdmin
-      .from('organization_members')
-      .select('*')
-      .in('organization_id', orgIds)
-      .eq('user_id', user.id)
-      .limit(1)
-      .single();
-
-    if (!membership) {
-      return c.json({ error: 'Access denied' }, 403);
+    const { error: membershipError } = await verifyAnyOrgMembership(user.id, orgIds);
+    if (membershipError) {
+      return c.json({ error: membershipError }, 403);
     }
 
     // Fetch full participant data with organization details
@@ -545,7 +604,7 @@ app.get("/make-server-de012ad4/gigs/:id", async (c) => {
 });
 
 // Create gig
-app.post("/make-server-de012ad4/gigs", async (c) => {
+app.post("/gigs", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -556,50 +615,43 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
   try {
     const body = await c.req.json();
     const { 
-      primary_organization_id, // The organization creating the gig (for permission check)
+      primary_organization_id,
       parent_gig_id,
       hierarchy_depth = 0,
-      venue_id, 
-      act_id, 
       participants = [],
-      staff = [],
-      staff_slots = [], // New format with nested assignments
-      equipment = [],
+      staff_slots = [],
       ...gigData 
     } = body;
 
-    // Verify user has permission to create gigs (must be Admin or Manager in at least one org)
-    let primaryOrgType = 'Production'; // Default fallback
+    // Verify user has permission to create gigs (must be Admin or Manager)
+    let primaryOrgType = 'Production';
     if (primary_organization_id) {
-      const { data: membership } = await supabaseAdmin
-        .from('organization_members')
-        .select('*, organization:organizations(type)')
-        .eq('organization_id', primary_organization_id)
-        .eq('user_id', user.id)
-        .single();
+      const { membership, error: membershipError } = await verifyOrgMembership(
+        user.id, 
+        primary_organization_id, 
+        ['Admin', 'Manager']
+      );
 
-      if (!membership || (membership.role !== 'Admin' && membership.role !== 'Manager')) {
+      if (membershipError || !membership) {
         return c.json({ error: 'Insufficient permissions. Only Admins and Managers can create gigs.' }, 403);
       }
 
       // Get the organization type for the default role
-      if (membership.organization && membership.organization.type) {
+      if (membership.organization?.type) {
         primaryOrgType = membership.organization.type;
       }
     }
 
-    // Set created_by and updated_by
-    const gigToInsert = {
-      ...gigData,
-      parent_gig_id,
-      hierarchy_depth,
-      created_by: user.id,
-      updated_by: user.id,
-    };
-
+    // Create gig
     const { data: gig, error } = await supabaseAdmin
       .from('gigs')
-      .insert(gigToInsert)
+      .insert({
+        ...gigData,
+        parent_gig_id,
+        hierarchy_depth,
+        created_by: user.id,
+        updated_by: user.id,
+      })
       .select()
       .single();
 
@@ -608,7 +660,7 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       return c.json({ error: error.message }, 400);
     }
 
-    // Create participants (including the primary organization if provided)
+    // Create participants
     const participantsToInsert: Array<{
       gig_id: string;
       organization_id: string;
@@ -620,12 +672,11 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       participantsToInsert.push({
         gig_id: gig.id,
         organization_id: primary_organization_id,
-        role: primaryOrgType, // Use the organization's type as the default role
+        role: primaryOrgType,
         notes: null,
       });
     }
     
-    // Add all participants from the participants array
     participants.forEach((p: any) => {
       if (p.organization_id && p.role) {
         participantsToInsert.push({
@@ -647,44 +698,12 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       }
     }
 
-    // Create staff slots - support both old format (staff) and new format (staff_slots)
-    const staffData = staff_slots.length > 0 ? staff_slots : staff;
-    
-    if (staffData.length > 0) {
-      for (const slot of staffData) {
-        // First, we need to get or create the staff_role_id from the role name
-        let staffRoleId = null;
+    // Create staff slots with assignments
+    if (staff_slots.length > 0) {
+      for (const slot of staff_slots) {
+        const staffRoleId = await getOrCreateStaffRole(slot.role);
+        if (!staffRoleId) continue;
         
-        if (slot.role) {
-          // Try to find existing role
-          const { data: existingRole } = await supabaseAdmin
-            .from('staff_roles')
-            .select('id')
-            .eq('name', slot.role)
-            .maybeSingle();
-          
-          staffRoleId = existingRole?.id;
-          
-          // If role doesn't exist, create it
-          if (!staffRoleId) {
-            const { data: newRole, error: roleError } = await supabaseAdmin
-              .from('staff_roles')
-              .insert({ name: slot.role })
-              .select('id')
-              .single();
-            
-            if (!roleError && newRole) {
-              staffRoleId = newRole.id;
-            }
-          }
-        }
-        
-        if (!staffRoleId) {
-          console.error('Could not create or find staff role for:', slot.role);
-          continue;
-        }
-        
-        // Insert the staff slot
         const { data: createdSlot, error: slotError } = await supabaseAdmin
           .from('gig_staff_slots')
           .insert({
@@ -702,10 +721,10 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
           continue;
         }
         
-        // Create staff assignments for this slot
-        if (slot.assignments && slot.assignments.length > 0) {
+        // Create staff assignments
+        if (slot.assignments?.length > 0) {
           const assignmentsToInsert = slot.assignments
-            .filter((a: any) => a.user_id) // Only create if user is assigned
+            .filter((a: any) => a.user_id)
             .map((a: any) => ({
               gig_staff_slot_id: createdSlot.id,
               user_id: a.user_id,
@@ -728,9 +747,7 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
       }
     }
 
-    // Equipment handling removed - will be replaced with kit assignments in future
-
-    // Fetch the complete gig with all relations
+    // Fetch complete gig with participants
     const { data: participantsData } = await supabaseAdmin
       .from('gig_participants')
       .select('*, organization:organization_id(*)')
@@ -752,7 +769,7 @@ app.post("/make-server-de012ad4/gigs", async (c) => {
 });
 
 // Update gig
-app.put("/make-server-de012ad4/gigs/:id", async (c) => {
+app.put("/gigs/:id", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -764,9 +781,9 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
 
   try {
     const body = await c.req.json();
-    const { venue_id, act_id, participants, staff_slots, ...gigData } = body;
+    const { participants, staff_slots, ...gigData } = body;
 
-    // Get existing gig and verify access through participants
+    // Get existing gig
     const { data: gig } = await supabaseAdmin
       .from('gigs')
       .select('*')
@@ -777,7 +794,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
       return c.json({ error: 'Gig not found' }, 404);
     }
 
-    // Verify user has access through gig participants
+    // Verify user has Admin or Manager access
     const { data: gigParticipants } = await supabaseAdmin
       .from('gig_participants')
       .select('organization_id')
@@ -787,7 +804,6 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
       return c.json({ error: 'Access denied' }, 403);
     }
 
-    // Check if user is Admin or Manager of any participating organization
     const orgIds = gigParticipants.map(gp => gp.organization_id);
     const { data: memberships } = await supabaseAdmin
       .from('organization_members')
@@ -813,9 +829,8 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
       return c.json({ error: error.message }, 400);
     }
 
-    // Handle participants update if provided
+    // Update participants if provided
     if (participants !== undefined) {
-      // Get existing participants
       const { data: existingParticipants } = await supabaseAdmin
         .from('gig_participants')
         .select('id, organization_id, role')
@@ -833,7 +848,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
 
       const incomingIds = new Set(incomingParticipants.filter((p: any) => p.id).map((p: any) => p.id));
 
-      // Delete participants that are no longer present
+      // Delete removed participants
       const idsToDelete = Array.from(existingIds).filter(id => !incomingIds.has(id));
       if (idsToDelete.length > 0) {
         await supabaseAdmin
@@ -842,10 +857,9 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
           .in('id', idsToDelete);
       }
 
-      // Update existing participants and insert new ones
+      // Update existing and insert new participants
       for (const p of incomingParticipants) {
         if (p.id && existingIds.has(p.id)) {
-          // Update existing participant
           await supabaseAdmin
             .from('gig_participants')
             .update({
@@ -855,7 +869,6 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
             })
             .eq('id', p.id);
         } else {
-          // Insert new participant
           await supabaseAdmin
             .from('gig_participants')
             .insert({
@@ -866,44 +879,10 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
             });
         }
       }
-    } else {
-      // Legacy support for venue_id and act_id
-      if (venue_id !== undefined) {
-        // Delete existing venue participant
-        await supabaseAdmin
-          .from('gig_participants')
-          .delete()
-          .eq('gig_id', gigId)
-          .eq('role', 'Venue');
-
-        // Add new venue participant if provided
-        if (venue_id) {
-          await supabaseAdmin
-            .from('gig_participants')
-            .insert({ gig_id: gigId, organization_id: venue_id, role: 'Venue' });
-        }
-      }
-
-      if (act_id !== undefined) {
-        // Delete existing act participant
-        await supabaseAdmin
-          .from('gig_participants')
-          .delete()
-          .eq('gig_id', gigId)
-          .eq('role', 'Act');
-
-        // Add new act participant if provided
-        if (act_id) {
-          await supabaseAdmin
-            .from('gig_participants')
-            .insert({ gig_id: gigId, organization_id: act_id, role: 'Act' });
-        }
-      }
     }
 
-    // Handle staff slots update if provided
+    // Update staff slots if provided
     if (staff_slots !== undefined) {
-      // Get existing staff slots with assignments
       const { data: existingSlots } = await supabaseAdmin
         .from('gig_staff_slots')
         .select('id, staff_role_id, organization_id, required_count, notes, assignments:gig_staff_assignments(id, user_id, status, rate, fee, notes)')
@@ -911,43 +890,16 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
 
       const existingSlotIds = new Set((existingSlots || []).map(s => s.id));
       const incomingSlots = staff_slots.filter((s: any) => s.role && s.role.trim() !== '');
-
-      // Process each incoming slot
       const processedSlotIds = new Set();
 
       for (const slot of incomingSlots) {
-        // Get or create staff role
-        let staffRoleId = null;
-        const { data: existingRole } = await supabaseAdmin
-          .from('staff_roles')
-          .select('id')
-          .eq('name', slot.role)
-          .maybeSingle();
-
-        staffRoleId = existingRole?.id;
-
-        if (!staffRoleId) {
-          const { data: newRole, error: roleError } = await supabaseAdmin
-            .from('staff_roles')
-            .insert({ name: slot.role })
-            .select('id')
-            .single();
-
-          if (!roleError && newRole) {
-            staffRoleId = newRole.id;
-          }
-        }
-
-        if (!staffRoleId) {
-          console.error('Could not create or find staff role for:', slot.role);
-          continue;
-        }
+        const staffRoleId = await getOrCreateStaffRole(slot.role);
+        if (!staffRoleId) continue;
 
         let slotId = slot.id;
 
-        // Check if this slot exists
+        // Update existing or insert new slot
         if (slotId && existingSlotIds.has(slotId)) {
-          // Update existing slot
           await supabaseAdmin
             .from('gig_staff_slots')
             .update({
@@ -960,8 +912,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
           
           processedSlotIds.add(slotId);
         } else {
-          // Insert new slot
-          const { data: newSlot, error: slotError } = await supabaseAdmin
+          const { data: newSlot } = await supabaseAdmin
             .from('gig_staff_slots')
             .insert({
               gig_id: gigId,
@@ -973,18 +924,14 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
             .select('id')
             .single();
 
-          if (slotError) {
-            console.error('Error creating staff slot:', slotError);
-            continue;
+          if (newSlot) {
+            slotId = newSlot.id;
+            processedSlotIds.add(slotId);
           }
-
-          slotId = newSlot.id;
-          processedSlotIds.add(slotId);
         }
 
         // Handle assignments for this slot
         if (slot.assignments && slot.assignments.length > 0) {
-          // Get existing assignments for this slot
           const { data: existingAssignments } = await supabaseAdmin
             .from('gig_staff_assignments')
             .select('id, user_id')
@@ -994,10 +941,8 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
           const incomingAssignments = slot.assignments.filter((a: any) => a.user_id && a.user_id.trim() !== '');
           const processedAssignmentIds = new Set();
 
-          // Process each assignment
           for (const assignment of incomingAssignments) {
             if (assignment.id && existingAssignmentIds.has(assignment.id)) {
-              // Update existing assignment
               await supabaseAdmin
                 .from('gig_staff_assignments')
                 .update({
@@ -1011,7 +956,6 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
               
               processedAssignmentIds.add(assignment.id);
             } else {
-              // Insert new assignment
               const { data: newAssignment } = await supabaseAdmin
                 .from('gig_staff_assignments')
                 .insert({
@@ -1031,7 +975,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
             }
           }
 
-          // Delete assignments that are no longer present
+          // Delete removed assignments
           const assignmentIdsToDelete = Array.from(existingAssignmentIds).filter(id => !processedAssignmentIds.has(id));
           if (assignmentIdsToDelete.length > 0) {
             await supabaseAdmin
@@ -1040,7 +984,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
               .in('id', assignmentIdsToDelete);
           }
         } else {
-          // No assignments provided, delete all existing assignments for this slot
+          // Delete all assignments for this slot
           await supabaseAdmin
             .from('gig_staff_assignments')
             .delete()
@@ -1048,10 +992,9 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
         }
       }
 
-      // Delete slots that are no longer present
+      // Delete removed slots (cascade will handle assignments)
       const slotIdsToDelete = Array.from(existingSlotIds).filter(id => !processedSlotIds.has(id));
       if (slotIdsToDelete.length > 0) {
-        // Assignments will be deleted via cascade
         await supabaseAdmin
           .from('gig_staff_slots')
           .delete()
@@ -1059,7 +1002,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
       }
     }
 
-    // Fetch participants
+    // Fetch updated participants
     const { data: updatedParticipants } = await supabaseAdmin
       .from('gig_participants')
       .select('*, organization:organization_id(*)')
@@ -1080,7 +1023,7 @@ app.put("/make-server-de012ad4/gigs/:id", async (c) => {
 });
 
 // Delete gig
-app.delete("/make-server-de012ad4/gigs/:id", async (c) => {
+app.delete("/gigs/:id", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -1091,7 +1034,7 @@ app.delete("/make-server-de012ad4/gigs/:id", async (c) => {
   const gigId = c.req.param('id');
 
   try {
-    // Verify user has access through gig participants
+    // Verify user has admin access through gig participants
     const { data: gigParticipants } = await supabaseAdmin
       .from('gig_participants')
       .select('organization_id')
@@ -1101,7 +1044,6 @@ app.delete("/make-server-de012ad4/gigs/:id", async (c) => {
       return c.json({ error: 'Gig not found or access denied' }, 403);
     }
 
-    // Check if user is Admin of any participating organization
     const orgIds = gigParticipants.map(gp => gp.organization_id);
     const { data: adminMemberships } = await supabaseAdmin
       .from('organization_members')
@@ -1131,10 +1073,10 @@ app.delete("/make-server-de012ad4/gigs/:id", async (c) => {
   }
 });
 
-// ===== Google Places API Integration =====
+// ===== Google Places Integration =====
 
 // Search Google Places
-app.get("/make-server-de012ad4/places/search", async (c) => {
+app.get("/integrations/google-places/search", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -1158,50 +1100,13 @@ app.get("/make-server-de012ad4/places/search", async (c) => {
   }
 
   try {
-    // Define entertainment/event-related business types to prefer
-    const relevantTypes = [
-      'point_of_interest',
-      'establishment',
-      'night_club',
-      'stadium',
-      'movie_theater',
-      'amusement_park',
-      'art_gallery',
-      'museum',
-      'convention_center',
-      'tourist_attraction',
-      'bar',
-      'restaurant', // Venues sometimes categorized as restaurants
-    ];
-
-    // Keywords that indicate relevance to our industry
-    const relevantKeywords = [
-      'sound', 'audio', 'lighting', 'stage', 'staging', 'production',
-      'event', 'venue', 'entertainment', 'music', 'concert', 'theater',
-      'theatre', 'show', 'performance', 'rental', 'av', 'pro audio',
-      'equipment', 'technical', 'rigging', 'truss', 'speaker', 'band',
-      'dj', 'disco', 'nightclub', 'club', 'hall', 'ballroom', 'arena',
-      'amphitheater', 'festival', 'catering', 'studio', 'recording'
-    ];
-
-    // Keywords that indicate likely irrelevance (exclude if these are primary descriptors)
-    const irrelevantKeywords = [
-      'plumbing', 'hvac', 'roofing', 'concrete', 'paving', 'asphalt',
-      'landscaping', 'lawn', 'automotive', 'car wash', 'gas station',
-      'convenience store', 'grocery', 'pharmacy', 'medical', 'dental',
-      'doctor', 'clinic', 'hospital', 'attorney', 'lawyer', 'insurance',
-      'real estate', 'bank', 'credit union', 'tax', 'accounting'
-    ];
-
-    // Use Google Places API Text Search with location bias if provided
     const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
     url.searchParams.append('query', query);
     url.searchParams.append('key', apiKey);
     
-    // Add location bias for proximity sorting if coordinates provided
     if (latitude && longitude) {
       url.searchParams.append('location', `${latitude},${longitude}`);
-      url.searchParams.append('radius', '50000'); // 50km radius for better results
+      url.searchParams.append('radius', '50000');
     }
 
     const response = await fetch(url.toString());
@@ -1215,41 +1120,22 @@ app.get("/make-server-de012ad4/places/search", async (c) => {
       }, 500);
     }
 
-    // Filter and score results based on relevance
+    // Filter results for relevance to event industry
+    const relevantKeywords = [
+      'sound', 'audio', 'lighting', 'stage', 'staging', 'production',
+      'event', 'venue', 'entertainment', 'music', 'concert', 'theater',
+      'theatre', 'show', 'performance', 'rental', 'av', 'pro audio'
+    ];
+
     const scoredResults = (data.results || []).map((place: any) => {
       const name = (place.name || '').toLowerCase();
-      const types = place.types || [];
-      
       let score = 0;
       
-      // Boost score if name starts with the query (partial match from beginning)
-      if (name.startsWith(query.toLowerCase())) {
-        score += 50;
-      } else if (name.includes(query.toLowerCase())) {
-        score += 20;
-      }
+      if (name.startsWith(query.toLowerCase())) score += 50;
+      else if (name.includes(query.toLowerCase())) score += 20;
       
-      // Check if name or types contain relevant keywords
-      const nameWords = name.split(/\s+/);
       for (const keyword of relevantKeywords) {
-        if (name.includes(keyword.toLowerCase())) {
-          score += 30;
-        }
-      }
-      
-      // Check if business type is relevant
-      const hasRelevantType = types.some((type: string) => 
-        relevantTypes.includes(type)
-      );
-      if (hasRelevantType) {
-        score += 10;
-      }
-      
-      // Penalize if name contains irrelevant keywords as primary descriptors
-      for (const keyword of irrelevantKeywords) {
-        if (nameWords.includes(keyword.toLowerCase())) {
-          score -= 100; // Strong penalty for clearly irrelevant businesses
-        }
+        if (name.includes(keyword.toLowerCase())) score += 30;
       }
       
       return {
@@ -1257,22 +1143,17 @@ app.get("/make-server-de012ad4/places/search", async (c) => {
         name: place.name,
         formatted_address: place.formatted_address,
         types: place.types,
-        score: score,
+        score,
       };
     });
 
-    // Filter out clearly irrelevant results (negative score) but keep uncertain ones
-    const filteredResults = scoredResults.filter((result: any) => result.score >= 0);
-    
-    // Sort by score (highest first) - this handles both relevance and proximity
+    const filteredResults = scoredResults.filter((r: any) => r.score >= 0);
     filteredResults.sort((a: any, b: any) => b.score - a.score);
     
-    // Return top 10 results
-    const results = filteredResults.slice(0, 10).map((result: any) => ({
-      place_id: result.place_id,
-      name: result.name,
-      formatted_address: result.formatted_address,
-      // Note: Text Search doesn't include phone/website, need Place Details for that
+    const results = filteredResults.slice(0, 10).map((r: any) => ({
+      place_id: r.place_id,
+      name: r.name,
+      formatted_address: r.formatted_address,
     }));
 
     return c.json({ results });
@@ -1283,7 +1164,7 @@ app.get("/make-server-de012ad4/places/search", async (c) => {
 });
 
 // Get Google Place details
-app.get("/make-server-de012ad4/places/:placeId", async (c) => {
+app.get("/integrations/google-places/:placeId", async (c) => {
   const authHeader = c.req.header('Authorization');
   const { user, error: authError } = await getAuthenticatedUser(authHeader);
   
@@ -1300,7 +1181,6 @@ app.get("/make-server-de012ad4/places/:placeId", async (c) => {
   }
 
   try {
-    // Use Google Places API Place Details
     const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
     url.searchParams.append('place_id', placeId);
     url.searchParams.append('fields', 'name,formatted_address,formatted_phone_number,website,address_components,editorial_summary');

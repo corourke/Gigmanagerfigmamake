@@ -46,7 +46,7 @@ export default function UserSelector({
       }
 
       // Use server endpoint to search users (bypasses RLS issues)
-      const url = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/users?search=${encodeURIComponent(query)}`;
+      const url = `https://${projectId}.supabase.co/functions/v1/server/users?search=${encodeURIComponent(query)}`;
 
       const response = await fetch(url, {
         headers: {

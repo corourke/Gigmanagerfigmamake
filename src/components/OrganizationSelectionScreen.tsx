@@ -91,10 +91,11 @@ export default function OrganizationSelectionScreen({
         }
 
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/organizations`,
+          `https://${projectId}.supabase.co/functions/v1/server/organizations`,
           {
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
             },
           }
         );
@@ -142,7 +143,7 @@ export default function OrganizationSelectionScreen({
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/organizations/${org.id}/join`,
+        `https://${projectId}.supabase.co/functions/v1/server/organizations/${org.id}/members`,
         {
           method: 'POST',
           headers: {

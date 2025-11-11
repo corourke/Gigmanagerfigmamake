@@ -195,7 +195,7 @@ export default function CreateOrganizationScreen({
       }
 
       // Build search URL with optional location parameters
-      let searchUrl = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/places/search?query=${encodeURIComponent(searchQuery)}`;
+      let searchUrl = `https://${projectId}.supabase.co/functions/v1/server/integrations/google-places/search?query=${encodeURIComponent(searchQuery)}`;
       if (userLocation) {
         searchUrl += `&latitude=${userLocation.latitude}&longitude=${userLocation.longitude}`;
       }
@@ -229,7 +229,7 @@ export default function CreateOrganizationScreen({
         placeResults.map(async (place: any) => {
           try {
             const detailsResponse = await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/places/${place.place_id}`,
+              `https://${projectId}.supabase.co/functions/v1/server/integrations/google-places/${place.place_id}`,
               {
                 headers: {
                   'Authorization': `Bearer ${session.access_token}`,
@@ -431,7 +431,7 @@ export default function CreateOrganizationScreen({
       }
 
       // Create organization via server endpoint
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/organizations`, {
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/organizations`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,

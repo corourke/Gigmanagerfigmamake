@@ -284,7 +284,7 @@ export default function CreateGigScreen({
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/gigs/${gigId}`,
+        `https://${projectId}.supabase.co/functions/v1/gigs/${gigId}`,
         {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
@@ -628,7 +628,7 @@ export default function CreateGigScreen({
         console.log('Updating gig with data:', JSON.stringify(gigData, null, 2));
 
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/gigs/${gigId}`,
+          `https://${projectId}.supabase.co/functions/v1/gigs/${gigId}`,
           {
             method: 'PUT',
             headers: {
@@ -689,7 +689,7 @@ export default function CreateGigScreen({
         console.log('Creating gig with data:', JSON.stringify(gigData, null, 2));
 
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/gigs`,
+          `https://${projectId}.supabase.co/functions/v1/gigs`,
           {
             method: 'POST',
             headers: {
@@ -733,7 +733,7 @@ export default function CreateGigScreen({
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/gigs/${gigId}`,
+        `https://${projectId}.supabase.co/functions/v1/gigs/${gigId}`,
         {
           method: 'DELETE',
           headers: {

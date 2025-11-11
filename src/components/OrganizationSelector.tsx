@@ -61,7 +61,7 @@ export default function OrganizationSelector({
       }
 
       // Use server endpoint to search organizations (bypasses RLS issues)
-      let url = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/organizations?search=${encodeURIComponent(query)}`;
+      let url = `https://${projectId}.supabase.co/functions/v1/server/organizations?search=${encodeURIComponent(query)}`;
       
       if (organizationType) {
         url += `&type=${encodeURIComponent(organizationType)}`;

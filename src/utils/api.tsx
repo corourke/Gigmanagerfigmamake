@@ -1,7 +1,7 @@
 import { projectId, publicAnonKey } from './supabase/info';
 import { createClient } from './supabase/client';
 
-const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4`;
+const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/server`;
 
 // Helper to get auth headers
 async function getAuthHeaders() {

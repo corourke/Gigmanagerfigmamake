@@ -96,12 +96,13 @@ export default function UserProfileCompletionScreen({
       }
 
       const supabaseUrl = `https://${projectId}.supabase.co`;
+      const accessToken = session.access_token;
       
       // Update user profile via server endpoint
-      const response = await fetch(`${supabaseUrl}/functions/v1/make-server-de012ad4/users/${user.id}`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/server/users/${user.id}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
