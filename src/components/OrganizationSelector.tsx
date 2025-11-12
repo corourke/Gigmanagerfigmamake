@@ -6,10 +6,7 @@ import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from '.
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Search, X, Building2, MapPin, Loader2 } from 'lucide-react';
 import type { Organization, OrganizationType } from '../App';
-import { createClient } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info';
-
-const supabase = createClient();
+import { searchOrganizations } from '../utils/api';
 
 interface OrganizationSelectorProps {
   onSelect: (org: Organization | null) => void;
@@ -54,32 +51,12 @@ export default function OrganizationSelector({
     setIsSearching(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        setIsSearching(false);
-        return;
-      }
-
-      // Use server endpoint to search organizations (bypasses RLS issues)
-      let url = `https://${projectId}.supabase.co/functions/v1/server/organizations?search=${encodeURIComponent(query)}`;
-      
-      if (organizationType) {
-        url += `&type=${encodeURIComponent(organizationType)}`;
-      }
-
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+      // Use API function instead of Edge Function
+      const orgs = await searchOrganizations({
+        search: query,
+        type: organizationType,
       });
-
-      if (!response.ok) {
-        console.error('Error searching organizations');
-        setSearchResults([]);
-      } else {
-        const data = await response.json();
-        setSearchResults(data || []);
-      }
+      setSearchResults(orgs || []);
     } catch (error) {
       console.error('Error searching organizations:', error);
       setSearchResults([]);

@@ -1,10 +1,47 @@
 import { useState, useEffect } from 'react';
+import { z } from 'zod';
+import { useForm, Controller } from 'react-hook-form@7.55.0';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { format } from 'date-fns';
+import { toast } from 'sonner@2.0.3';
+import { 
+  Calendar, 
+  Clock, 
+  MapPin, 
+  Users, 
+  DollarSign, 
+  Tag, 
+  FileText, 
+  Plus, 
+  X, 
+  Trash2, 
+  Loader2, 
+  Save, 
+  ArrowLeft,
+  ChevronLeft,
+  Lock,
+  AlertCircle,
+  Building2
+} from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Card } from './ui/card';
-import { Alert, AlertDescription } from './ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
+import { Alert, AlertDescription } from './ui/alert';
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle 
+} from './ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -21,42 +58,19 @@ import {
   TableHeader,
   TableRow,
 } from './ui/table';
-import { Textarea } from './ui/textarea';
 import AppHeader from './AppHeader';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
-import {
-  AlertCircle,
-  Loader2,
-  ChevronLeft,
-  Clock,
-  Lock,
-  Plus,
-  X,
-  Users,
-  Wrench,
-  Building2,
-  FileText,
-  Trash2,
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { toast } from 'sonner@2.0.3';
-import { z } from 'zod';
-import MarkdownEditor from './MarkdownEditor';
-import TagsInput from './TagsInput';
 import OrganizationSelector from './OrganizationSelector';
 import UserSelector from './UserSelector';
-import type { Organization, User, UserRole, OrganizationType } from '../App';
-import type { GigStatus } from './GigListScreen';
+import TagsInput from './TagsInput';
+import MarkdownEditor from './MarkdownEditor';
+import type { User, Organization, OrganizationType, UserRole } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { projectId } from '../utils/supabase/info';
+import { getGig, updateGig, createGig, deleteGig } from '../utils/api';
 
 const supabase = createClient();
+
+type GigStatus = 'DateHold' | 'Proposed' | 'Booked' | 'Completed' | 'Cancelled' | 'Settled';
 
 interface CreateGigScreenProps {
   organization: Organization;
@@ -192,22 +206,25 @@ export default function CreateGigScreen({
   onSwitchOrganization,
   onLogout,
 }: CreateGigScreenProps) {
-  const [formData, setFormData] = useState<FormData>({
-    title: '',
-    start_time: undefined,
-    end_time: undefined,
-    timezone: 'America/Los_Angeles',
-    status: 'DateHold',
-    tags: [],
-    notes: '',
-    amount_paid: '',
+  const { control, handleSubmit, formState: { errors }, setValue, getValues } = useForm<FormData>({
+    resolver: zodResolver(gigSchema),
+    defaultValues: {
+      title: '',
+      start_time: undefined,
+      end_time: undefined,
+      timezone: 'America/Los_Angeles',
+      status: 'DateHold',
+      tags: [],
+      notes: '',
+      amount_paid: '',
+    },
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [generalError, setGeneralError] = useState<string>('');
   const isEditMode = !!gigId;
   
   // Participants - automatically add current organization
@@ -276,39 +293,18 @@ export default function CreateGigScreen({
 
     setIsLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        toast.error('Not authenticated');
-        setIsLoading(false);
-        return;
-      }
-
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/gigs/${gigId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to load gig');
-      }
-
-      const gig = await response.json();
+      // Use the API function instead of Edge Function
+      const gig = await getGig(gigId);
 
       // Populate form with gig data
-      setFormData({
-        title: gig.title || '',
-        start_time: gig.start ? new Date(gig.start) : undefined,
-        end_time: gig.end ? new Date(gig.end) : undefined,
-        timezone: gig.timezone || 'America/Los_Angeles',
-        status: gig.status || 'DateHold',
-        tags: gig.tags || [],
-        notes: gig.notes || '',
-        amount_paid: gig.amount_paid ? gig.amount_paid.toString() : '',
-      });
+      setValue('title', gig.title || '');
+      setValue('start_time', gig.start ? new Date(gig.start) : undefined);
+      setValue('end_time', gig.end ? new Date(gig.end) : undefined);
+      setValue('timezone', gig.timezone || 'America/Los_Angeles');
+      setValue('status', gig.status || 'DateHold');
+      setValue('tags', gig.tags || []);
+      setValue('notes', gig.notes || '');
+      setValue('amount_paid', gig.amount_paid ? gig.amount_paid.toString() : '');
 
       // Load participants from the gig response
       if (gig.participants && gig.participants.length > 0) {
@@ -362,26 +358,19 @@ export default function CreateGigScreen({
       toast.success('Gig loaded successfully');
     } catch (error: any) {
       console.error('Error loading gig:', error);
-      toast.error('Failed to load gig data');
+      toast.error(error.message || 'Failed to load gig data');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleInputChange = (field: keyof FormData, value: string | string[] | Date | undefined) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
+    setValue(field, value);
   };
 
   const validateForm = (): boolean => {
     try {
-      gigSchema.parse(formData);
+      gigSchema.parse(getValues());
       
       // Additional validation for participants
       const invalidParticipants = participants.filter(p => {
@@ -560,36 +549,29 @@ export default function CreateGigScreen({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      toast.error('Please fix the form errors');
-      return;
-    }
-
+  const onSubmit = async (data: FormData) => {
     setIsSubmitting(true);
-    setErrors({});
+    setGeneralError('');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
-        setErrors({ general: 'Not authenticated. Please sign in again.' });
+        setGeneralError('Not authenticated. Please sign in again.');
         setIsSubmitting(false);
         return;
       }
 
       // Prepare gig data
       const gigData: any = {
-        title: formData.title.trim(),
-        start: formData.start_time!.toISOString(),
-        end: formData.end_time!.toISOString(),
-        timezone: formData.timezone,
-        status: formData.status,
-        tags: formData.tags,
-        notes: formData.notes.trim() || null,
-        amount_paid: formData.amount_paid.trim() ? parseFloat(formData.amount_paid) : null,
+        title: data.title.trim(), // Use title directly (not name)
+        start: data.start_time!.toISOString(),
+        end: data.end_time!.toISOString(),
+        timezone: data.timezone,
+        status: data.status,
+        tags: data.tags,
+        notes: data.notes.trim() || null,
+        amount_paid: data.amount_paid.trim() ? parseFloat(data.amount_paid) : null,
       };
 
       if (isEditMode) {
@@ -627,23 +609,11 @@ export default function CreateGigScreen({
 
         console.log('Updating gig with data:', JSON.stringify(gigData, null, 2));
 
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/gigs/${gigId}`,
-          {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(gigData),
-          }
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error('Update gig error response:', errorData);
-          throw new Error(errorData.error || 'Failed to update gig');
+        // Use API function instead of Edge Function
+        if (!gigId) {
+          throw new Error('Gig ID is required for update');
         }
+        await updateGig(gigId, gigData);
 
         toast.success('Gig updated successfully!');
         if (onGigUpdated) {
@@ -688,32 +658,15 @@ export default function CreateGigScreen({
 
         console.log('Creating gig with data:', JSON.stringify(gigData, null, 2));
 
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/gigs`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(gigData),
-          }
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error('Create gig error response:', errorData);
-          throw new Error(errorData.error || 'Failed to create gig');
-        }
-
-        const newGig = await response.json();
+        // Use API function instead of Edge Function
+        const newGig = await createGig(gigData);
 
         toast.success('Gig created successfully!');
         onGigCreated(newGig.id);
       }
     } catch (err: any) {
       console.error(`Error ${isEditMode ? 'updating' : 'creating'} gig:`, err);
-      setErrors({ general: err.message || `Failed to ${isEditMode ? 'update' : 'create'} gig. Please try again.` });
+      setGeneralError(err.message || `Failed to ${isEditMode ? 'update' : 'create'} gig. Please try again.` );
       setIsSubmitting(false);
     }
   };
@@ -724,28 +677,8 @@ export default function CreateGigScreen({
     setIsDeleting(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session?.access_token) {
-        toast.error('Not authenticated');
-        setIsDeleting(false);
-        return;
-      }
-
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/gigs/${gigId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete gig');
-      }
+      // Use API function instead of Edge Function
+      await deleteGig(gigId);
 
       toast.success('Gig deleted successfully!');
       setShowDeleteConfirm(false);
@@ -802,11 +735,11 @@ export default function CreateGigScreen({
         </div>
       ) : (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <form onSubmit={handleSubmit}>
-            {errors.general && (
+          <form onSubmit={handleSubmit(onSubmit)}>
+            {generalError && (
               <Alert variant="destructive" className="mb-6">
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{errors.general}</AlertDescription>
+                <AlertDescription>{generalError}</AlertDescription>
               </Alert>
             )}
 
@@ -823,7 +756,7 @@ export default function CreateGigScreen({
                     id="title"
                     type="text"
                     placeholder="Enter gig title"
-                    value={formData.title}
+                    value={getValues('title')}
                     onChange={(e) => handleInputChange('title', e.target.value)}
                     className={errors.title ? 'border-red-500' : ''}
                     disabled={isSubmitting}
@@ -846,7 +779,7 @@ export default function CreateGigScreen({
                       <Input
                         id="start_time"
                         type="datetime-local"
-                        value={formData.start_time ? format(formData.start_time, "yyyy-MM-dd'T'HH:mm") : ''}
+                        value={getValues('start_time') ? format(getValues('start_time'), "yyyy-MM-dd'T'HH:mm") : ''}
                         onChange={(e) => handleInputChange('start_time', e.target.value ? new Date(e.target.value) : undefined)}
                         className={`pl-9 ${errors.start_time ? 'border-red-500' : ''}`}
                         disabled={isSubmitting}
@@ -869,7 +802,7 @@ export default function CreateGigScreen({
                       <Input
                         id="end_time"
                         type="datetime-local"
-                        value={formData.end_time ? format(formData.end_time, "yyyy-MM-dd'T'HH:mm") : ''}
+                        value={getValues('end_time') ? format(getValues('end_time'), "yyyy-MM-dd'T'HH:mm") : ''}
                         onChange={(e) => handleInputChange('end_time', e.target.value ? new Date(e.target.value) : undefined)}
                         className={`pl-9 ${errors.end_time ? 'border-red-500' : ''}`}
                         disabled={isSubmitting}
@@ -889,7 +822,7 @@ export default function CreateGigScreen({
                     Timezone <span className="text-red-500">*</span>
                   </Label>
                   <Select
-                    value={formData.timezone}
+                    value={getValues('timezone')}
                     onValueChange={(value) => handleInputChange('timezone', value)}
                     disabled={isSubmitting}
                   >
@@ -911,7 +844,7 @@ export default function CreateGigScreen({
                     Status <span className="text-red-500">*</span>
                   </Label>
                   <Select
-                    value={formData.status}
+                    value={getValues('status')}
                     onValueChange={(value) => handleInputChange('status', value)}
                     disabled={isSubmitting}
                   >
@@ -1245,7 +1178,7 @@ export default function CreateGigScreen({
                 <div className="space-y-2">
                   <Label htmlFor="tags">Tags</Label>
                   <TagsInput
-                    value={formData.tags}
+                    value={getValues('tags')}
                     onChange={(tags) => handleInputChange('tags', tags)}
                     suggestions={SUGGESTED_TAGS}
                     placeholder="Add tags to categorize this gig..."
@@ -1265,7 +1198,7 @@ export default function CreateGigScreen({
                       step="0.01"
                       min="0"
                       placeholder="0.00"
-                      value={formData.amount_paid}
+                      value={getValues('amount_paid')}
                       onChange={(e) => handleInputChange('amount_paid', e.target.value)}
                       className={`pl-7 ${errors.amount_paid ? 'border-red-500' : ''}`}
                       disabled={isSubmitting}
@@ -1282,7 +1215,7 @@ export default function CreateGigScreen({
                 <div className="space-y-2">
                   <Label htmlFor="notes">Notes</Label>
                   <MarkdownEditor
-                    value={formData.notes}
+                    value={getValues('notes')}
                     onChange={(value) => handleInputChange('notes', value)}
                     placeholder="Add notes about this gig..."
                     disabled={isSubmitting}

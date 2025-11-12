@@ -4,10 +4,7 @@ import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from '.
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Search, User as UserIcon, Loader2 } from 'lucide-react';
 import type { User } from '../App';
-import { createClient } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info';
-
-const supabase = createClient();
+import { searchUsers } from '../utils/api';
 
 interface UserSelectorProps {
   onSelect: (user: User) => void;
@@ -39,28 +36,9 @@ export default function UserSelector({
     setIsSearching(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        setIsSearching(false);
-        return;
-      }
-
-      // Use server endpoint to search users (bypasses RLS issues)
-      const url = `https://${projectId}.supabase.co/functions/v1/server/users?search=${encodeURIComponent(query)}`;
-
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (!response.ok) {
-        console.error('Error searching users');
-        setSearchResults([]);
-      } else {
-        const data = await response.json();
-        setSearchResults(data || []);
-      }
+      // Use API function instead of Edge Function
+      const users = await searchUsers(query);
+      setSearchResults(users || []);
     } catch (error) {
       console.error('Error searching users:', error);
       setSearchResults([]);

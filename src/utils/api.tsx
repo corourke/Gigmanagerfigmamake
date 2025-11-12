@@ -82,8 +82,9 @@ export async function updateUserProfile(userId: string, updates: {
 
 export async function searchUsers(search?: string) {
   // Get current authenticated user
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
 
   // Get organizations current user belongs to
   const { data: userOrgs } = await supabase
@@ -132,8 +133,9 @@ export async function searchUsers(search?: string) {
 
 export async function getUserOrganizations(userId: string) {
   // Get current authenticated user
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
 
   let query = supabase
     .from('organization_members')
@@ -205,9 +207,10 @@ export async function createOrganization(orgData: {
   country?: string;
   place_id?: string;
 }) {
-  // Get current user
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  // Get current user from session
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
 
   // Create organization
   const { data: org, error: orgError } = await supabase
@@ -241,9 +244,10 @@ export async function createOrganization(orgData: {
 }
 
 export async function joinOrganization(orgId: string) {
-  // Get current user
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  // Get current user from session
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
 
   // Check if organization exists
   const { data: org, error: orgError } = await supabase
@@ -340,6 +344,11 @@ export async function getGigsForOrganization(organizationId: string) {
 }
 
 export async function getGig(gigId: string) {
+  // Get current user from session
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
   const { data: gig, error } = await supabase
     .from('gigs')
     .select('*')
@@ -349,6 +358,29 @@ export async function getGig(gigId: string) {
   if (error) {
     console.error('Error fetching gig:', error);
     throw error;
+  }
+
+  // Verify user has access through gig participants
+  const { data: gigParticipants } = await supabase
+    .from('gig_participants')
+    .select('organization_id')
+    .eq('gig_id', gigId);
+
+  if (!gigParticipants || gigParticipants.length === 0) {
+    throw new Error('Access denied - no participants found');
+  }
+
+  const orgIds = gigParticipants.map(gp => gp.organization_id);
+  
+  // Check if user is member of any participating organization
+  const { data: userMemberships } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id)
+    .in('organization_id', orgIds);
+
+  if (!userMemberships || userMemberships.length === 0) {
+    throw new Error('Access denied - not a member of participating organizations');
   }
 
   // Fetch full participant data with organization details
@@ -364,14 +396,17 @@ export async function getGig(gigId: string) {
 }
 
 export async function createGig(gigData: {
-  name: string;
-  start: string;
-  end?: string;
-  venue_address?: string;
-  status?: string;
-  notes?: string;
-  settlement_type?: string;
-  settlement_amount?: number;
+  title: string; // Required - matches database schema
+  start: string; // Required - matches database schema
+  end: string; // Required - matches database schema (changed from optional)
+  timezone: string; // Required - matches database schema
+  status?: string; // Optional - has default
+  venue_address?: string; // Optional
+  notes?: string; // Optional
+  settlement_type?: string; // Optional
+  settlement_amount?: number; // Optional
+  tags?: string[]; // Optional - has default
+  amount_paid?: number; // Optional
   primary_organization_id?: string;
   parent_gig_id?: string;
   hierarchy_depth?: number;
@@ -391,84 +426,383 @@ export async function createGig(gigData: {
     }>;
   }>;
 }) {
-  // Get current user
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  try {
+    console.log('createGig called with data:', JSON.stringify(gigData, null, 2));
+    
+    // Get current user from session
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) throw new Error('Not authenticated');
+    const user = session.user;
 
-  const { 
-    primary_organization_id,
-    parent_gig_id,
-    hierarchy_depth = 0,
-    participants = [],
-    staff_slots = [],
-    ...restGigData
-  } = gigData;
-
-  // Create gig
-  const { data: gig, error } = await supabase
-    .from('gigs')
-    .insert({
-      ...restGigData,
+    const { 
+      primary_organization_id,
       parent_gig_id,
-      hierarchy_depth,
+      hierarchy_depth = 0,
+      participants = [],
+      staff_slots = [],
+      ...restGigData
+    } = gigData;
+
+    console.log('Creating gig with restGigData:', JSON.stringify(restGigData, null, 2));
+
+    // Validate required fields before insert
+    if (!restGigData.title) {
+      throw new Error('Title is required');
+    }
+    if (!restGigData.start) {
+      throw new Error('Start time is required');
+    }
+    if (!restGigData.end) {
+      throw new Error('End time is required');
+    }
+    if (!restGigData.timezone) {
+      throw new Error('Timezone is required');
+    }
+
+    // Prepare insert data
+    const insertData = {
+      title: restGigData.title,
+      start: restGigData.start,
+      end: restGigData.end,
+      timezone: restGigData.timezone,
+      status: restGigData.status || 'DateHold',
+      tags: Array.isArray(restGigData.tags) ? restGigData.tags : [],
+      notes: restGigData.notes || null,
+      amount_paid: restGigData.amount_paid !== undefined && restGigData.amount_paid !== null ? restGigData.amount_paid : null,
+      parent_gig_id: parent_gig_id || null,
+      hierarchy_depth: hierarchy_depth || 0,
       created_by: user.id,
       updated_by: user.id,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error('Error creating gig:', error);
-    throw error;
-  }
-
-  // Create participants
-  const participantsToInsert: Array<{
-    gig_id: string;
-    organization_id: string;
-    role: string;
-    notes?: string | null;
-  }> = [];
-  
-  if (primary_organization_id) {
-    // Get organization type for default role
-    const { data: org } = await supabase
-      .from('organizations')
-      .select('type')
-      .eq('id', primary_organization_id)
+    };
+    
+    console.log('Inserting gig with data:', JSON.stringify(insertData, null, 2));
+    
+    // Create gig
+    const { data: gig, error } = await supabase
+      .from('gigs')
+      .insert(insertData)
+      .select()
       .single();
+    
+    console.log('Insert result - gig:', gig);
+    console.log('Insert result - error:', error);
 
-    participantsToInsert.push({
-      gig_id: gig.id,
-      organization_id: primary_organization_id,
-      role: org?.type || 'Production',
-      notes: null,
-    });
-  }
-  
-  participants.forEach((p: any) => {
-    if (p.organization_id && p.role) {
+    if (error) {
+      console.error('Error creating gig:', error);
+      throw new Error(`Failed to create gig: ${error.message}`);
+    }
+
+    if (!gig) {
+      throw new Error('Gig creation returned no data');
+    }
+
+    console.log('Gig created successfully:', gig.id);
+
+    // Create participants
+    const participantsToInsert: Array<{
+      gig_id: string;
+      organization_id: string;
+      role: string;
+      notes?: string | null;
+    }> = [];
+    
+    if (primary_organization_id) {
+      // Get organization type for default role
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('type')
+        .eq('id', primary_organization_id)
+        .single();
+
       participantsToInsert.push({
         gig_id: gig.id,
-        organization_id: p.organization_id,
-        role: p.role,
-        notes: p.notes || null,
+        organization_id: primary_organization_id,
+        role: org?.type || 'Production',
+        notes: null,
       });
     }
-  });
-
-  if (participantsToInsert.length > 0) {
-    const { error: participantsError } = await supabase
-      .from('gig_participants')
-      .insert(participantsToInsert);
     
-    if (participantsError) {
-      console.error('Error creating participants:', participantsError);
+    participants.forEach((p: any) => {
+      if (p.organization_id && p.role) {
+        participantsToInsert.push({
+          gig_id: gig.id,
+          organization_id: p.organization_id,
+          role: p.role,
+          notes: p.notes || null,
+        });
+      }
+    });
+
+    if (participantsToInsert.length > 0) {
+      const { error: participantsError } = await supabase
+        .from('gig_participants')
+        .insert(participantsToInsert);
+      
+      if (participantsError) {
+        console.error('Error creating participants:', participantsError);
+      }
+    }
+
+    // Create staff slots with assignments
+    if (staff_slots.length > 0) {
+      for (const slot of staff_slots) {
+        // Get or create staff role
+        let staffRoleId: string | null = null;
+        
+        const { data: existingRole } = await supabase
+          .from('staff_roles')
+          .select('id')
+          .eq('name', slot.role)
+          .maybeSingle();
+
+        if (existingRole?.id) {
+          staffRoleId = existingRole.id;
+        } else {
+          const { data: newRole, error: roleError } = await supabase
+            .from('staff_roles')
+            .insert({ name: slot.role })
+            .select('id')
+            .single();
+          
+          if (roleError) {
+            console.error('Error creating staff role:', roleError);
+            continue;
+          }
+          
+          staffRoleId = newRole?.id || null;
+        }
+
+        if (!staffRoleId) {
+          console.error('Failed to get or create staff role for:', slot.role);
+          continue;
+        }
+        
+        // Ensure we have an organization_id for the slot
+        const slotOrgId = slot.organization_id || primary_organization_id;
+        if (!slotOrgId) {
+          console.error('No organization_id available for staff slot:', slot);
+          continue;
+        }
+        
+        const { data: createdSlot, error: slotError } = await supabase
+          .from('gig_staff_slots')
+          .insert({
+            gig_id: gig.id,
+            organization_id: slotOrgId,
+            staff_role_id: staffRoleId,
+            required_count: slot.count || slot.required_count || 1,
+            notes: slot.notes || null,
+          })
+          .select()
+          .single();
+        
+        if (slotError) {
+          console.error('Error creating staff slot:', slotError);
+          continue;
+        }
+        
+        if (!createdSlot) {
+          console.error('Staff slot creation returned no data');
+          continue;
+        }
+        
+        // Create staff assignments
+        if (slot.assignments?.length) {
+          const assignmentsToInsert = slot.assignments
+            .filter((a: any) => a.user_id)
+            .map((a: any) => ({
+              slot_id: createdSlot.id, // Fixed: column name is slot_id, not gig_staff_slot_id
+              user_id: a.user_id,
+              status: a.status || 'Requested',
+              rate: a.rate || null,
+              fee: a.fee || null,
+              notes: a.notes || null,
+            }));
+          
+          if (assignmentsToInsert.length > 0) {
+            const { error: assignmentsError } = await supabase
+              .from('gig_staff_assignments')
+              .insert(assignmentsToInsert);
+            
+            if (assignmentsError) {
+              console.error('Error creating staff assignments:', assignmentsError);
+            }
+          }
+        }
+      }
+    }
+
+    // Fetch complete gig with participants
+    const { data: participantsData } = await supabase
+      .from('gig_participants')
+      .select('*, organization:organization_id(*)')
+      .eq('gig_id', gig.id);
+
+    const venue = participantsData?.find(p => p.role === 'Venue')?.organization;
+    const act = participantsData?.find(p => p.role === 'Act')?.organization;
+
+    const result = {
+      ...gig,
+      venue,
+      act,
+      participants: participantsData || [],
+    };
+
+    console.log('createGig returning:', result);
+    return result;
+  } catch (error) {
+    console.error('createGig error:', error);
+    throw error;
+  }
+}
+
+export async function updateGig(gigId: string, gigData: {
+  title?: string;
+  start?: string;
+  end?: string;
+  timezone?: string;
+  status?: string;
+  tags?: string[];
+  notes?: string;
+  amount_paid?: number | null;
+  participants?: Array<{ 
+    id?: string;
+    organization_id: string; 
+    role: string; 
+    notes?: string | null 
+  }>;
+  staff_slots?: Array<{
+    id?: string;
+    role: string;
+    count?: number;
+    notes?: string | null;
+    assignments?: Array<{
+      id?: string;
+      user_id: string;
+      status?: string;
+      rate?: number | null;
+      fee?: number | null;
+      notes?: string | null;
+    }>;
+  }>;
+}) {
+  // Get current user from session
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  // Verify user has access to this gig
+  const { data: gigParticipants } = await supabase
+    .from('gig_participants')
+    .select('organization_id')
+    .eq('gig_id', gigId);
+
+  if (!gigParticipants || gigParticipants.length === 0) {
+    throw new Error('Access denied - no participants found');
+  }
+
+  const orgIds = gigParticipants.map(gp => gp.organization_id);
+  
+  // Check if user is member of any participating organization with Admin or Manager role
+  const { data: userMemberships } = await supabase
+    .from('organization_members')
+    .select('organization_id, role')
+    .eq('user_id', user.id)
+    .in('organization_id', orgIds);
+
+  if (!userMemberships || userMemberships.length === 0) {
+    throw new Error('Access denied - not a member of participating organizations');
+  }
+
+  const hasAdminOrManager = userMemberships.some(m => m.role === 'Admin' || m.role === 'Manager');
+  if (!hasAdminOrManager) {
+    throw new Error('Access denied - only Admins and Managers can update gigs');
+  }
+
+  const { participants = [], staff_slots = [], ...restGigData } = gigData;
+
+  // Update gig basic info
+  const { error: updateError } = await supabase
+    .from('gigs')
+    .update({
+      ...restGigData,
+      updated_by: user.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', gigId);
+
+  if (updateError) {
+    console.error('Error updating gig:', updateError);
+    throw updateError;
+  }
+
+  // Update participants
+  if (participants && participants.length > 0) {
+    // Get existing participants
+    const { data: existingParticipants } = await supabase
+      .from('gig_participants')
+      .select('id')
+      .eq('gig_id', gigId);
+
+    const existingIds = existingParticipants?.map(p => p.id) || [];
+    const incomingIds = participants.filter(p => p.id).map(p => p.id!);
+
+    // Delete participants that are no longer in the list
+    const idsToDelete = existingIds.filter(id => !incomingIds.includes(id));
+    if (idsToDelete.length > 0) {
+      await supabase
+        .from('gig_participants')
+        .delete()
+        .in('id', idsToDelete);
+    }
+
+    // Update or insert participants
+    for (const participant of participants) {
+      if (participant.id && existingIds.includes(participant.id)) {
+        // Update existing participant
+        await supabase
+          .from('gig_participants')
+          .update({
+            organization_id: participant.organization_id,
+            role: participant.role,
+            notes: participant.notes || null,
+          })
+          .eq('id', participant.id);
+      } else if (participant.organization_id && participant.role) {
+        // Insert new participant
+        await supabase
+          .from('gig_participants')
+          .insert({
+            gig_id: gigId,
+            organization_id: participant.organization_id,
+            role: participant.role,
+            notes: participant.notes || null,
+          });
+      }
     }
   }
 
-  // Create staff slots with assignments
-  if (staff_slots.length > 0) {
+  // Update staff slots and assignments
+  if (staff_slots && staff_slots.length > 0) {
+    // Get existing staff slots
+    const { data: existingSlots } = await supabase
+      .from('gig_staff_slots')
+      .select('id')
+      .eq('gig_id', gigId);
+
+    const existingSlotIds = existingSlots?.map(s => s.id) || [];
+    const incomingSlotIds = staff_slots.filter(s => s.id).map(s => s.id!);
+
+    // Delete slots that are no longer in the list (cascades to assignments)
+    const slotIdsToDelete = existingSlotIds.filter(id => !incomingSlotIds.includes(id));
+    if (slotIdsToDelete.length > 0) {
+      await supabase
+        .from('gig_staff_slots')
+        .delete()
+        .in('id', slotIdsToDelete);
+    }
+
+    // Update or insert staff slots
     for (const slot of staff_slots) {
       // Get or create staff role
       let staffRoleId: string | null = null;
@@ -492,154 +826,104 @@ export async function createGig(gigData: {
       }
 
       if (!staffRoleId) continue;
-      
-      const { data: createdSlot, error: slotError } = await supabase
-        .from('gig_staff_slots')
-        .insert({
-          gig_id: gig.id,
-          organization_id: slot.organization_id || primary_organization_id,
-          staff_role_id: staffRoleId,
-          required_count: slot.count || slot.required_count || 1,
-          notes: slot.notes || null,
-        })
-        .select()
-        .single();
-      
-      if (slotError) {
-        console.error('Error creating staff slot:', slotError);
-        continue;
-      }
-      
-      // Create staff assignments
-      if (slot.assignments?.length) {
-        const assignmentsToInsert = slot.assignments
-          .filter((a: any) => a.user_id)
-          .map((a: any) => ({
-            gig_staff_slot_id: createdSlot.id,
-            user_id: a.user_id,
-            status: a.status || 'Requested',
-            rate: a.rate || null,
-            fee: a.fee || null,
-            notes: a.notes || null,
-          }));
-        
-        if (assignmentsToInsert.length > 0) {
-          const { error: assignmentsError } = await supabase
-            .from('gig_staff_assignments')
-            .insert(assignmentsToInsert);
-          
-          if (assignmentsError) {
-            console.error('Error creating staff assignments:', assignmentsError);
-          }
-        }
-      }
-    }
-  }
 
-  // Fetch complete gig with participants
-  const { data: participantsData } = await supabase
-    .from('gig_participants')
-    .select('*, organization:organization_id(*)')
-    .eq('gig_id', gig.id);
+      let slotId = slot.id;
 
-  const venue = participantsData?.find(p => p.role === 'Venue')?.organization;
-  const act = participantsData?.find(p => p.role === 'Act')?.organization;
-
-  return {
-    ...gig,
-    venue,
-    act,
-    participants: participantsData || [],
-  };
-}
-
-export async function updateGig(gigId: string, updates: any) {
-  // Get current user
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
-  const { participants, staff_slots, ...gigData } = updates;
-
-  // Update gig
-  const { data: updatedGig, error } = await supabase
-    .from('gigs')
-    .update({ ...gigData, updated_by: user.id, updated_at: new Date().toISOString() })
-    .eq('id', gigId)
-    .select()
-    .single();
-
-  if (error) {
-    console.error('Error updating gig:', error);
-    throw error;
-  }
-
-  // Update participants if provided
-  if (participants !== undefined) {
-    // Get existing participants
-    const { data: existingParticipants } = await supabase
-      .from('gig_participants')
-      .select('id, organization_id, role')
-      .eq('gig_id', gigId);
-
-    const existingIds = new Set((existingParticipants || []).map(p => p.id));
-    const incomingParticipants = participants
-      .filter((p: any) => p.organization_id && p.role)
-      .map((p: any) => ({
-        id: p.id || null,
-        organization_id: p.organization_id,
-        role: p.role,
-        notes: p.notes || null,
-      }));
-
-    const incomingIds = new Set(incomingParticipants.filter((p: any) => p.id).map((p: any) => p.id));
-
-    // Delete removed participants
-    const idsToDelete = Array.from(existingIds).filter(id => !incomingIds.has(id));
-    if (idsToDelete.length > 0) {
-      await supabase
-        .from('gig_participants')
-        .delete()
-        .in('id', idsToDelete);
-    }
-
-    // Update existing and insert new participants
-    for (const p of incomingParticipants) {
-      if (p.id && existingIds.has(p.id)) {
+      if (slot.id && existingSlotIds.includes(slot.id)) {
+        // Update existing slot
         await supabase
-          .from('gig_participants')
+          .from('gig_staff_slots')
           .update({
-            organization_id: p.organization_id,
-            role: p.role,
-            notes: p.notes,
+            staff_role_id: staffRoleId,
+            required_count: slot.count || 1,
+            notes: slot.notes || null,
           })
-          .eq('id', p.id);
-      } else {
-        await supabase
-          .from('gig_participants')
+          .eq('id', slot.id);
+      } else if (slot.role) {
+        // Insert new slot
+        const { data: newSlot } = await supabase
+          .from('gig_staff_slots')
           .insert({
             gig_id: gigId,
-            organization_id: p.organization_id,
-            role: p.role,
-            notes: p.notes,
-          });
+            staff_role_id: staffRoleId,
+            required_count: slot.count || 1,
+            notes: slot.notes || null,
+          })
+          .select('id')
+          .single();
+        
+        slotId = newSlot?.id;
+      }
+
+      if (!slotId) continue;
+
+      // Handle assignments for this slot
+      if (slot.assignments && slot.assignments.length > 0) {
+        // Get existing assignments for this slot
+        const { data: existingAssignments } = await supabase
+          .from('gig_staff_assignments')
+          .select('id')
+          .eq('slot_id', slotId); // Fixed: column name is slot_id
+
+        const existingAssignmentIds = existingAssignments?.map(a => a.id) || [];
+        const incomingAssignmentIds = slot.assignments.filter(a => a.id).map(a => a.id!);
+
+        // Delete assignments that are no longer in the list
+        const assignmentIdsToDelete = existingAssignmentIds.filter(id => !incomingAssignmentIds.includes(id));
+        if (assignmentIdsToDelete.length > 0) {
+          await supabase
+            .from('gig_staff_assignments')
+            .delete()
+            .in('id', assignmentIdsToDelete);
+        }
+
+        // Update or insert assignments
+        for (const assignment of slot.assignments) {
+          if (assignment.id && existingAssignmentIds.includes(assignment.id)) {
+            // Update existing assignment
+            await supabase
+              .from('gig_staff_assignments')
+              .update({
+                user_id: assignment.user_id,
+                status: assignment.status || 'Requested',
+                rate: assignment.rate || null,
+                fee: assignment.fee || null,
+                notes: assignment.notes || null,
+              })
+              .eq('id', assignment.id);
+          } else if (assignment.user_id) {
+            // Insert new assignment
+            await supabase
+              .from('gig_staff_assignments')
+              .insert({
+                slot_id: slotId, // Fixed: column name is slot_id
+                user_id: assignment.user_id,
+                status: assignment.status || 'Requested',
+                rate: assignment.rate || null,
+                fee: assignment.fee || null,
+                notes: assignment.notes || null,
+              });
+          }
+        }
+      } else if (slotId) {
+        // No assignments in incoming data, delete all existing assignments for this slot
+        await supabase
+          .from('gig_staff_assignments')
+          .delete()
+          .eq('slot_id', slotId); // Fixed: column name is slot_id
       }
     }
+  } else {
+    // No slots in incoming data, delete all existing slots (cascades to assignments)
+    await supabase
+      .from('gig_staff_slots')
+      .delete()
+      .eq('gig_id', gigId);
   }
 
-  // Fetch updated participants
-  const { data: updatedParticipants } = await supabase
-    .from('gig_participants')
-    .select('*, organization:organization_id(*)')
-    .eq('gig_id', gigId);
-
-  const venue = updatedParticipants?.find(p => p.role === 'Venue')?.organization;
-  const act = updatedParticipants?.find(p => p.role === 'Act')?.organization;
-
-  return {
-    ...updatedGig,
-    venue,
-    act,
-  };
+  // Fetch updated gig with participants
+  const updatedGig = await getGig(gigId);
+  return updatedGig;
 }
 
 export async function deleteGig(gigId: string) {

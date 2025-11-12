@@ -530,8 +530,68 @@ export default function GigListScreen({
           }
         }
         if (field === 'status') updateData.status = newValue;
-        if (field === 'venue') updateData.venue_id = newValue?.id || null;
-        if (field === 'act') updateData.act_id = newValue?.id || null;
+        if (field === 'venue') {
+          // Update venue through participants
+          const gig = gigs.find(g => g.id === gigId);
+          if (gig) {
+            const participants = gig.participants || [];
+            const otherParticipants = participants
+              .filter(p => p.role !== 'Venue')
+              .map(p => ({ id: p.id, organization_id: p.organization_id, role: p.role, notes: p.notes }));
+            
+            if (newValue?.id) {
+              // Check if there's already a Venue participant with a different org
+              const existingVenue = participants.find(p => p.role === 'Venue');
+              if (existingVenue) {
+                // Update existing venue participant
+                updateData.participants = [
+                  ...otherParticipants, 
+                  { id: existingVenue.id, organization_id: newValue.id, role: 'Venue' }
+                ];
+              } else {
+                // Add new venue participant
+                updateData.participants = [
+                  ...otherParticipants, 
+                  { organization_id: newValue.id, role: 'Venue' }
+                ];
+              }
+            } else {
+              // Remove venue
+              updateData.participants = otherParticipants;
+            }
+          }
+        }
+        if (field === 'act') {
+          // Update act through participants
+          const gig = gigs.find(g => g.id === gigId);
+          if (gig) {
+            const participants = gig.participants || [];
+            const otherParticipants = participants
+              .filter(p => p.role !== 'Act')
+              .map(p => ({ id: p.id, organization_id: p.organization_id, role: p.role, notes: p.notes }));
+            
+            if (newValue?.id) {
+              // Check if there's already an Act participant with a different org
+              const existingAct = participants.find(p => p.role === 'Act');
+              if (existingAct) {
+                // Update existing act participant
+                updateData.participants = [
+                  ...otherParticipants, 
+                  { id: existingAct.id, organization_id: newValue.id, role: 'Act' }
+                ];
+              } else {
+                // Add new act participant
+                updateData.participants = [
+                  ...otherParticipants, 
+                  { organization_id: newValue.id, role: 'Act' }
+                ];
+              }
+            } else {
+              // Remove act
+              updateData.participants = otherParticipants;
+            }
+          }
+        }
         if (field === 'tags') updateData.tags = newValue;
 
         await api.updateGig(gigId, updateData);

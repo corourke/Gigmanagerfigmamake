@@ -3,6 +3,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
+import { Alert, AlertDescription } from './ui/alert';
 import AppHeader from './AppHeader';
 import {
   Search,
@@ -18,8 +19,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
-import { createClient } from '../utils/supabase/client';
+import { searchOrganizations, joinOrganization } from '../utils/api';
 import type { User, Organization, OrganizationMembership, OrganizationType, UserRole } from '../App';
 
 interface OrganizationSelectionScreenProps {
@@ -73,7 +73,7 @@ export default function OrganizationSelectionScreen({
 
   // Search all organizations when query changes
   useEffect(() => {
-    const searchOrganizations = async () => {
+    const performSearch = async () => {
       if (!searchQuery.trim()) {
         setSearchResults([]);
         return;
@@ -82,40 +82,9 @@ export default function OrganizationSelectionScreen({
       setViewState('searching');
       
       try {
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session?.access_token) {
-          setViewState('error');
-          return;
-        }
-
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/server/organizations`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error('Failed to search organizations');
-        }
-
-        const allOrgs: Organization[] = await response.json();
-        
-        // Filter by search query
-        const query = searchQuery.toLowerCase();
-        const filtered = allOrgs.filter(org =>
-          org.name.toLowerCase().includes(query) ||
-          org.type.toLowerCase().includes(query) ||
-          org.city?.toLowerCase().includes(query) ||
-          org.state?.toLowerCase().includes(query)
-        );
-
-        setSearchResults(filtered);
+        // Use API function instead of Edge Function
+        const orgs = await searchOrganizations({ search: searchQuery });
+        setSearchResults(orgs || []);
         setViewState('default');
       } catch (error) {
         console.error('Error searching organizations:', error);
@@ -124,7 +93,7 @@ export default function OrganizationSelectionScreen({
       }
     };
 
-    const debounceTimer = setTimeout(searchOrganizations, 300);
+    const debounceTimer = setTimeout(performSearch, 300);
     return () => clearTimeout(debounceTimer);
   }, [searchQuery]);
 
@@ -133,30 +102,8 @@ export default function OrganizationSelectionScreen({
     setJoiningOrg(org.id);
 
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session?.access_token) {
-        toast.error('Not authenticated. Please sign in again.');
-        setJoiningOrg(null);
-        return;
-      }
-
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/organizations/${org.id}/members`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to join organization');
-      }
+      // Use API function instead of Edge Function
+      await joinOrganization(org.id);
 
       toast.success(`Joined ${org.name} as Viewer`);
       
