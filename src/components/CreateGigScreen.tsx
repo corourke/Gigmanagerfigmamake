@@ -792,7 +792,7 @@ export default function CreateGigScreen({
                       <Input
                         id="start_time"
                         type="datetime-local"
-                        value={getValues('start_time') ? format(getValues('start_time'), "yyyy-MM-dd'T'HH:mm") : ''}
+                        value={formValues.start_time ? format(formValues.start_time, "yyyy-MM-dd'T'HH:mm") : ''}
                         onChange={(e) => handleInputChange('start_time', e.target.value ? new Date(e.target.value) : undefined)}
                         className={`pl-9 ${errors.start_time ? 'border-red-500' : ''}`}
                         disabled={isSubmitting}
@@ -815,7 +815,7 @@ export default function CreateGigScreen({
                       <Input
                         id="end_time"
                         type="datetime-local"
-                        value={getValues('end_time') ? format(getValues('end_time'), "yyyy-MM-dd'T'HH:mm") : ''}
+                        value={formValues.end_time ? format(formValues.end_time, "yyyy-MM-dd'T'HH:mm") : ''}
                         onChange={(e) => handleInputChange('end_time', e.target.value ? new Date(e.target.value) : undefined)}
                         className={`pl-9 ${errors.end_time ? 'border-red-500' : ''}`}
                         disabled={isSubmitting}
@@ -835,7 +835,7 @@ export default function CreateGigScreen({
                     Timezone <span className="text-red-500">*</span>
                   </Label>
                   <Select
-                    value={getValues('timezone')}
+                    value={formValues.timezone}
                     onValueChange={(value) => handleInputChange('timezone', value)}
                     disabled={isSubmitting}
                   >
@@ -857,7 +857,7 @@ export default function CreateGigScreen({
                     Status <span className="text-red-500">*</span>
                   </Label>
                   <Select
-                    value={getValues('status')}
+                    value={formValues.status}
                     onValueChange={(value) => handleInputChange('status', value)}
                     disabled={isSubmitting}
                   >
@@ -1191,7 +1191,7 @@ export default function CreateGigScreen({
                 <div className="space-y-2">
                   <Label htmlFor="tags">Tags</Label>
                   <TagsInput
-                    value={getValues('tags')}
+                    value={formValues.tags}
                     onChange={(tags) => handleInputChange('tags', tags)}
                     suggestions={SUGGESTED_TAGS}
                     placeholder="Add tags to categorize this gig..."
@@ -1211,7 +1211,7 @@ export default function CreateGigScreen({
                       step="0.01"
                       min="0"
                       placeholder="0.00"
-                      value={getValues('amount_paid')}
+                      value={formValues.amount_paid}
                       onChange={(e) => handleInputChange('amount_paid', e.target.value)}
                       className={`pl-7 ${errors.amount_paid ? 'border-red-500' : ''}`}
                       disabled={isSubmitting}
@@ -1228,7 +1228,7 @@ export default function CreateGigScreen({
                 <div className="space-y-2">
                   <Label htmlFor="notes">Notes</Label>
                   <MarkdownEditor
-                    value={getValues('notes')}
+                    value={formValues.notes}
                     onChange={(value) => handleInputChange('notes', value)}
                     placeholder="Add notes about this gig..."
                     disabled={isSubmitting}

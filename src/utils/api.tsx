@@ -498,7 +498,7 @@ export async function createGig(gigData: {
 
     console.log('Gig created successfully:', gig.id);
 
-    // Create participants
+    // Create participants - UI handles all participant management including primary org
     const participantsToInsert: Array<{
       gig_id: string;
       organization_id: string;
@@ -506,22 +506,7 @@ export async function createGig(gigData: {
       notes?: string | null;
     }> = [];
     
-    if (primary_organization_id) {
-      // Get organization type for default role
-      const { data: org } = await supabase
-        .from('organizations')
-        .select('type')
-        .eq('id', primary_organization_id)
-        .single();
-
-      participantsToInsert.push({
-        gig_id: gig.id,
-        organization_id: primary_organization_id,
-        role: org?.type || 'Production',
-        notes: null,
-      });
-    }
-    
+    // Process participants from UI (already deduplicated)
     participants.forEach((p: any) => {
       if (p.organization_id && p.role) {
         participantsToInsert.push({
