@@ -230,7 +230,8 @@ CREATE INDEX idx_assets_category ON assets(category);
 -- Enable RLS on all tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE organization_members ENABLE ROW LEVEL SECURITY;
+-- Note: RLS is DISABLED on organization_members to prevent infinite recursion
+-- Access control is handled at the application layer in API functions
 ALTER TABLE staff_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gigs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gig_status_history ENABLE ROW LEVEL SECURITY;
@@ -336,32 +337,9 @@ CREATE POLICY "Admins can update their organizations" ON organizations
   FOR UPDATE USING (user_is_admin_of_org(organizations.id, auth.uid()));
 
 -- Organization members policies
--- Drop old recursive policies first (in case of re-running migration)
-DROP POLICY IF EXISTS "Users can view members of their organizations" ON organization_members;
-DROP POLICY IF EXISTS "Admins can manage organization members" ON organization_members;
-
--- Policy: Users can view members of organizations they belong to (no recursion)
--- Uses direct self-join instead of helper function to avoid recursion
-CREATE POLICY "Users can view members of their organizations" ON organization_members
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM organization_members om
-      WHERE om.organization_id = organization_members.organization_id
-      AND om.user_id = auth.uid()
-    )
-  );
-
--- Policy: Admins can manage members of their organizations (no recursion)
--- Uses direct self-join instead of helper function to avoid recursion
-CREATE POLICY "Admins can manage organization members" ON organization_members
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM organization_members om
-      WHERE om.organization_id = organization_members.organization_id
-      AND om.user_id = auth.uid()
-      AND om.role = 'Admin'
-    )
-  );
+-- RLS is DISABLED on organization_members to prevent infinite recursion
+-- Access control is handled at the application layer in API functions
+-- No policies are needed for this table
 
 -- Staff roles policies (global, read by all)
 CREATE POLICY "Anyone can view staff roles" ON staff_roles

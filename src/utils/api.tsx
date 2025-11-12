@@ -81,9 +81,39 @@ export async function updateUserProfile(userId: string, updates: {
 }
 
 export async function searchUsers(search?: string) {
+  // Get current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  // Get organizations current user belongs to
+  const { data: userOrgs } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id);
+
+  const orgIds = userOrgs?.map(o => o.organization_id) || [];
+  
+  if (orgIds.length === 0) {
+    return []; // User doesn't belong to any organizations
+  }
+
+  // Get all users who are members of these organizations
+  const { data: memberData } = await supabase
+    .from('organization_members')
+    .select('user_id')
+    .in('organization_id', orgIds);
+
+  const userIds = [...new Set(memberData?.map(m => m.user_id) || [])];
+
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  // Only search users in the same organizations
   let query = supabase
     .from('users')
     .select('*')
+    .in('id', userIds)
     .order('first_name');
 
   if (search) {
@@ -101,10 +131,30 @@ export async function searchUsers(search?: string) {
 }
 
 export async function getUserOrganizations(userId: string) {
-  const { data, error } = await supabase
+  // Get current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  let query = supabase
     .from('organization_members')
     .select('*, organization:organizations(*)')
     .eq('user_id', userId);
+
+  // If user is not requesting their own organizations, filter to shared organizations only
+  if (user.id !== userId) {
+    const { data: userOrgs } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', user.id);
+    
+    const orgIds = userOrgs?.map(o => o.organization_id) || [];
+    if (orgIds.length === 0) {
+      return []; // No shared organizations
+    }
+    query = query.in('organization_id', orgIds);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('Error fetching user organizations:', error);
