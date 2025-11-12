@@ -230,6 +230,7 @@ CREATE INDEX idx_assets_category ON assets(category);
 -- Enable RLS on all tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organization_members DISABLE ROW LEVEL SECURITY;
 -- Note: RLS is DISABLED on organization_members to prevent infinite recursion
 -- Access control is handled at the application layer in API functions
 ALTER TABLE staff_roles ENABLE ROW LEVEL SECURITY;
@@ -338,6 +339,12 @@ CREATE POLICY "Admins can update their organizations" ON organizations
 
 -- Organization members policies
 -- RLS is DISABLED on organization_members to prevent infinite recursion
+-- Access control is handled at the application layer in API functions
+-- No policies are needed for this table
+DROP POLICY IF EXISTS "Users can view members of their organizations" ON organization_members;
+DROP POLICY IF EXISTS "Admins can manage organization members" ON organization_members;
+
+-- Note: RLS is DISABLED on organization_members to prevent infinite recursion
 -- Access control is handled at the application layer in API functions
 -- No policies are needed for this table
 
