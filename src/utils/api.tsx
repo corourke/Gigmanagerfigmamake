@@ -671,3 +671,13 @@ export async function getGooglePlaceDetails(placeId: string) {
   console.warn('Google Places details requires Edge Function to be deployed');
   return null;
 }
+
+// ===== Legacy/Alias Functions for Backward Compatibility =====
+
+export async function getGigs(organizationId: string) {
+  return getGigsForOrganization(organizationId);
+}
+
+export async function getOrganizations(type?: string) {
+  return searchOrganizations(type ? { type } : undefined);
+}

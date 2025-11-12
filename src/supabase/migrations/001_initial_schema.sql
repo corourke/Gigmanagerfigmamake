@@ -249,12 +249,19 @@ ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 -- These SECURITY DEFINER functions bypass RLS to prevent infinite recursion
 -- when policies need to check organization membership
 
+-- Drop existing functions if they exist (clean slate for re-running migration)
+DROP FUNCTION IF EXISTS user_is_member_of_org(UUID, UUID);
+DROP FUNCTION IF EXISTS user_is_admin_of_org(UUID, UUID);
+DROP FUNCTION IF EXISTS user_organization_ids(UUID);
+DROP FUNCTION IF EXISTS user_is_admin_or_manager_of_org(UUID, UUID);
+
 -- Create helper function to check membership (bypasses RLS to avoid recursion)
 CREATE OR REPLACE FUNCTION user_is_member_of_org(org_id UUID, user_uuid UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
+SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM organization_members
@@ -268,6 +275,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
+SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM organization_members
@@ -283,6 +291,7 @@ RETURNS TABLE(organization_id UUID)
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
+SET search_path = public
 AS $$
   SELECT organization_id 
   FROM organization_members
@@ -295,6 +304,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
+SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM organization_members
