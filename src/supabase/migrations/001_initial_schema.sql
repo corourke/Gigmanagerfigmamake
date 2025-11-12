@@ -228,17 +228,17 @@ CREATE INDEX idx_assets_category ON assets(category);
 -- ============================================
 
 -- Enable RLS on all tables
+-- NOTE: Some tables have RLS DISABLED to prevent circular dependency recursion
+-- Those tables have access control handled at the application layer in /utils/api.tsx
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_members DISABLE ROW LEVEL SECURITY;
--- Note: RLS is DISABLED on organization_members to prevent infinite recursion
--- Access control is handled at the application layer in API functions
 ALTER TABLE staff_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gigs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gig_status_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE gig_participants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE gig_staff_slots ENABLE ROW LEVEL SECURITY;
-ALTER TABLE gig_staff_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gig_participants DISABLE ROW LEVEL SECURITY;
+ALTER TABLE gig_staff_slots DISABLE ROW LEVEL SECURITY;
+ALTER TABLE gig_staff_assignments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE gig_bids ENABLE ROW LEVEL SECURITY;
 ALTER TABLE org_annotations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
@@ -386,6 +386,10 @@ CREATE POLICY "Users can view status history for accessible gigs" ON gig_status_
   );
 
 -- Gig participants policies
+-- NOTE: RLS is DISABLED on gig_participants - these policies won't be created
+-- Access control is handled at the application layer in /utils/api.tsx
+-- Keeping policy definitions commented for reference:
+/*
 CREATE POLICY "Users can view participants for accessible gigs" ON gig_participants
   FOR SELECT USING (
     EXISTS (
@@ -403,8 +407,13 @@ CREATE POLICY "Admins and Managers can manage participants" ON gig_participants
       AND user_is_admin_or_manager_of_org(g.organization_id, auth.uid())
     )
   );
+*/
 
 -- Gig staff slots policies
+-- NOTE: RLS is DISABLED on gig_staff_slots - these policies won't be created
+-- Access control is handled at the application layer in /utils/api.tsx
+-- Keeping policy definitions commented for reference:
+/*
 CREATE POLICY "Users can view staff slots for accessible gigs" ON gig_staff_slots
   FOR SELECT USING (
     EXISTS (
@@ -422,8 +431,13 @@ CREATE POLICY "Admins and Managers can manage staff slots" ON gig_staff_slots
       AND user_is_admin_or_manager_of_org(g.organization_id, auth.uid())
     )
   );
+*/
 
 -- Gig staff assignments policies
+-- NOTE: RLS is DISABLED on gig_staff_assignments - these policies won't be created
+-- Access control is handled at the application layer in /utils/api.tsx
+-- Keeping policy definitions commented for reference:
+/*
 CREATE POLICY "Users can view staff assignments for accessible gigs" ON gig_staff_assignments
   FOR SELECT USING (
     EXISTS (
@@ -443,6 +457,7 @@ CREATE POLICY "Admins and Managers can manage staff assignments" ON gig_staff_as
       AND user_is_admin_or_manager_of_org(g.organization_id, auth.uid())
     )
   );
+*/
 
 -- Gig bids policies
 CREATE POLICY "Users can view bids for accessible gigs" ON gig_bids
