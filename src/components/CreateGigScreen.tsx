@@ -206,7 +206,7 @@ export default function CreateGigScreen({
   onSwitchOrganization,
   onLogout,
 }: CreateGigScreenProps) {
-  const { control, handleSubmit, formState: { errors }, setValue, getValues } = useForm<FormData>({
+  const { control, handleSubmit, formState: { errors }, setValue, getValues, watch } = useForm<FormData>({
     resolver: zodResolver(gigSchema),
     defaultValues: {
       title: '',
@@ -219,6 +219,9 @@ export default function CreateGigScreen({
       amount_paid: '',
     },
   });
+
+  // Watch form values for reactivity
+  const formValues = watch();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -570,8 +573,8 @@ export default function CreateGigScreen({
         timezone: data.timezone,
         status: data.status,
         tags: data.tags,
-        notes: data.notes.trim() || null,
-        amount_paid: data.amount_paid.trim() ? parseFloat(data.amount_paid) : null,
+        notes: data.notes?.trim() || null,
+        amount_paid: data.amount_paid?.trim() ? parseFloat(data.amount_paid) : null,
       };
 
       if (isEditMode) {
@@ -623,20 +626,30 @@ export default function CreateGigScreen({
         // Create new gig
         gigData.primary_organization_id = organization.id;
         
-        // Filter and validate participants - exclude current org and ensure they have both org and role
-        gigData.participants = participants
+        // Include ALL participants (including current org) - ensure they have both org and role
+        // Deduplicate by organization_id + role combination
+        const validParticipants = participants
           .filter(p => 
-            p.id !== 'current-org' && 
             p.organization_id && 
             p.organization_id.trim() !== '' &&
             p.role && 
             p.role.trim() !== ''
-          )
-          .map(p => ({
-            organization_id: p.organization_id,
-            role: p.role,
-            notes: p.notes || null,
-          }));
+          );
+        
+        // Deduplicate participants by (organization_id, role) combination
+        const uniqueParticipants = validParticipants.reduce((acc, p) => {
+          const key = `${p.organization_id}:${p.role}`;
+          if (!acc.has(key)) {
+            acc.set(key, {
+              organization_id: p.organization_id,
+              role: p.role,
+              notes: p.notes || null,
+            });
+          }
+          return acc;
+        }, new Map<string, any>());
+        
+        gigData.participants = Array.from(uniqueParticipants.values());
         
         // Filter staff slots and assignments - only include complete data
         gigData.staff_slots = staffSlots
@@ -756,7 +769,7 @@ export default function CreateGigScreen({
                     id="title"
                     type="text"
                     placeholder="Enter gig title"
-                    value={getValues('title')}
+                    value={formValues.title}
                     onChange={(e) => handleInputChange('title', e.target.value)}
                     className={errors.title ? 'border-red-500' : ''}
                     disabled={isSubmitting}
@@ -764,7 +777,7 @@ export default function CreateGigScreen({
                   {errors.title && (
                     <p className="text-sm text-red-600 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
-                      {errors.title}
+                      {errors.title.message}
                     </p>
                   )}
                 </div>
