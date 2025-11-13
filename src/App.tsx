@@ -7,6 +7,11 @@ import Dashboard from './components/Dashboard';
 import GigListScreen from './components/GigListScreen';
 import CreateGigScreen from './components/CreateGigScreen';
 import GigDetailScreen from './components/GigDetailScreen';
+import AssetListScreen from './components/AssetListScreen';
+import CreateAssetScreen from './components/CreateAssetScreen';
+import KitListScreen from './components/KitListScreen';
+import CreateKitScreen from './components/CreateKitScreen';
+import KitDetailScreen from './components/KitDetailScreen';
 import { Toaster } from './components/ui/sonner';
 import { createClient } from './utils/supabase/client';
 
@@ -64,7 +69,12 @@ type Route =
   | 'dashboard' 
   | 'gig-list'
   | 'create-gig'
-  | 'gig-detail';
+  | 'gig-detail'
+  | 'asset-list'
+  | 'create-asset'
+  | 'kit-list'
+  | 'create-kit'
+  | 'kit-detail';
 
 function App() {
   const [currentRoute, setCurrentRoute] = useState<Route>('login');
@@ -72,6 +82,8 @@ function App() {
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
   const [userOrganizations, setUserOrganizations] = useState<OrganizationMembership[]>([]);
   const [selectedGigId, setSelectedGigId] = useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
 
   // Get user's role in the current organization
   const getCurrentUserRole = (): UserRole | undefined => {
@@ -149,6 +161,8 @@ function App() {
     setSelectedOrganization(null);
     setUserOrganizations([]);
     setSelectedGigId(null);
+    setSelectedAssetId(null);
+    setSelectedKitId(null);
     setCurrentRoute('login');
   };
 
@@ -177,6 +191,57 @@ function App() {
 
   const handleBackToGigList = () => {
     setCurrentRoute('gig-list');
+  };
+
+  const handleNavigateToAssets = () => {
+    setCurrentRoute('asset-list');
+  };
+
+  const handleCreateAsset = () => {
+    setSelectedAssetId(null); // Clear selected asset when creating new
+    setCurrentRoute('create-asset');
+  };
+
+  const handleViewAsset = (assetId: string) => {
+    setSelectedAssetId(assetId);
+    setCurrentRoute('create-asset'); // Use create-asset route for editing too
+  };
+
+  const handleAssetCreated = (assetId: string) => {
+    setSelectedAssetId(assetId);
+    setCurrentRoute('asset-list'); // Navigate back to asset list instead of asset detail
+  };
+
+  const handleBackToAssetList = () => {
+    setCurrentRoute('asset-list');
+  };
+
+  const handleNavigateToKits = () => {
+    setCurrentRoute('kit-list');
+  };
+
+  const handleCreateKit = () => {
+    setSelectedKitId(null); // Clear selected kit when creating new
+    setCurrentRoute('create-kit');
+  };
+
+  const handleViewKit = (kitId: string) => {
+    setSelectedKitId(kitId);
+    setCurrentRoute('kit-detail'); // Use kit-detail route for viewing
+  };
+
+  const handleEditKit = (kitId: string) => {
+    setSelectedKitId(kitId);
+    setCurrentRoute('create-kit'); // Use create-kit route for editing
+  };
+
+  const handleKitCreated = (kitId: string) => {
+    setSelectedKitId(kitId);
+    setCurrentRoute('kit-list'); // Navigate back to kit list instead of kit detail
+  };
+
+  const handleBackToKitList = () => {
+    setCurrentRoute('kit-list');
   };
 
   return (
@@ -221,6 +286,8 @@ function App() {
           onLogout={handleLogout}
           onNavigateToGigs={handleNavigateToGigs}
           onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToAssets={handleNavigateToAssets}
+          onNavigateToKits={handleNavigateToKits}
         />
       )}
 
@@ -264,6 +331,91 @@ function App() {
           user={currentUser}
           userRole={getCurrentUserRole()}
           onBack={handleBackToGigList}
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={handleBackToGigList}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
+        />
+      )}
+      
+      {currentRoute === 'asset-list' && selectedOrganization && currentUser && (
+        <AssetListScreen
+          organization={selectedOrganization}
+          user={currentUser}
+          userRole={getCurrentUserRole()}
+          onBack={handleBackToDashboard}
+          onCreateAsset={handleCreateAsset}
+          onViewAsset={handleViewAsset}
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={handleBackToGigList}
+          onNavigateToAssets={handleNavigateToAssets}
+          onNavigateToKits={handleNavigateToKits}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
+          useMockData={USE_MOCK_DATA}
+        />
+      )}
+
+      {currentRoute === 'create-asset' && selectedOrganization && currentUser && (
+        <CreateAssetScreen
+          organization={selectedOrganization}
+          user={currentUser}
+          userRole={getCurrentUserRole()}
+          assetId={selectedAssetId} // Pass assetId for edit mode
+          onCancel={handleBackToAssetList}
+          onAssetCreated={handleAssetCreated}
+          onAssetUpdated={handleBackToAssetList} // After updating, go back to list
+          onAssetDeleted={handleBackToAssetList} // After deleting, go back to list
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={handleBackToGigList}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
+        />
+      )}
+      
+      {currentRoute === 'kit-list' && selectedOrganization && currentUser && (
+        <KitListScreen
+          organization={selectedOrganization}
+          user={currentUser}
+          userRole={getCurrentUserRole()}
+          onBack={handleBackToDashboard}
+          onCreateKit={handleCreateKit}
+          onViewKit={handleViewKit}
+          onEditKit={handleEditKit}
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={handleBackToGigList}
+          onNavigateToAssets={handleNavigateToAssets}
+          onNavigateToKits={handleNavigateToKits}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
+        />
+      )}
+
+      {currentRoute === 'create-kit' && selectedOrganization && currentUser && (
+        <CreateKitScreen
+          organization={selectedOrganization}
+          user={currentUser}
+          userRole={getCurrentUserRole()}
+          kitId={selectedKitId} // Pass kitId for edit mode
+          onCancel={handleBackToKitList}
+          onKitCreated={handleKitCreated}
+          onKitUpdated={handleBackToKitList} // After updating, go back to list
+          onKitDeleted={handleBackToKitList} // After deleting, go back to list
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={handleBackToGigList}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
+        />
+      )}
+      
+      {currentRoute === 'kit-detail' && selectedOrganization && currentUser && selectedKitId && (
+        <KitDetailScreen
+          kitId={selectedKitId}
+          organization={selectedOrganization}
+          user={currentUser}
+          userRole={getCurrentUserRole()}
+          onBack={handleBackToKitList}
+          onEdit={handleEditKit}
           onNavigateToDashboard={handleBackToDashboard}
           onNavigateToGigs={handleBackToGigList}
           onSwitchOrganization={handleBackToSelection}

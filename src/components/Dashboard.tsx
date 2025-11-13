@@ -18,6 +18,8 @@ interface DashboardProps {
   onLogout: () => void;
   onNavigateToGigs?: () => void;
   onNavigateToDashboard?: () => void;
+  onNavigateToAssets?: () => void;
+  onNavigateToKits?: () => void;
 }
 
 export default function Dashboard({
@@ -27,7 +29,9 @@ export default function Dashboard({
   onBackToSelection,
   onLogout,
   onNavigateToGigs,
-  onNavigateToDashboard
+  onNavigateToDashboard,
+  onNavigateToAssets,
+  onNavigateToKits
 }: DashboardProps) {
   return (
     <div className="min-h-screen bg-gray-50">
@@ -38,6 +42,7 @@ export default function Dashboard({
         currentRoute="dashboard"
         onNavigateToDashboard={onNavigateToDashboard}
         onNavigateToGigs={onNavigateToGigs}
+        onNavigateToAssets={onNavigateToAssets}
         onSwitchOrganization={onBackToSelection}
         onLogout={onLogout}
       />

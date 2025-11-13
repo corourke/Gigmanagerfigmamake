@@ -11,25 +11,22 @@ import {
 } from './ui/dropdown-menu';
 import {
   Building2,
-  LayoutDashboard,
-  Calendar,
-  Users,
-  Package,
   Settings,
   LogOut,
   SwitchCamera,
 } from 'lucide-react';
 import type { Organization, User, UserRole } from '../App';
+import NavigationMenu, { type RouteType } from './NavigationMenu';
 
 interface AppHeaderProps {
   organization?: Organization;
   user: User;
   userRole?: UserRole;
-  currentRoute: 'dashboard' | 'gig-list' | 'create-gig' | 'gig-detail';
+  currentRoute: RouteType;
   onNavigateToDashboard?: () => void;
   onNavigateToGigs?: () => void;
   onNavigateToTeam?: () => void;
-  onNavigateToEquipment?: () => void;
+  onNavigateToAssets?: () => void;
   onSwitchOrganization?: () => void;
   onLogout: () => void;
 }
@@ -49,7 +46,7 @@ export default function AppHeader({
   onNavigateToDashboard,
   onNavigateToGigs,
   onNavigateToTeam,
-  onNavigateToEquipment,
+  onNavigateToAssets,
   onSwitchOrganization,
   onLogout,
 }: AppHeaderProps) {
@@ -123,44 +120,13 @@ export default function AppHeader({
 
         {/* Navigation Bar - Only show if organization exists */}
         {organization && (
-          <nav className="flex items-center gap-1 h-12">
-            <button 
-              onClick={onNavigateToDashboard}
-              className={`px-4 py-2 text-sm rounded-lg transition-colors flex items-center gap-2 ${
-                currentRoute === 'dashboard'
-                  ? 'text-sky-600 bg-sky-50'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              Dashboard
-            </button>
-            <button 
-              onClick={onNavigateToGigs}
-              className={`px-4 py-2 text-sm rounded-lg transition-colors flex items-center gap-2 ${
-                currentRoute === 'gig-list' || currentRoute === 'create-gig' || currentRoute === 'gig-detail'
-                  ? 'text-sky-600 bg-sky-50'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              Events
-            </button>
-            <button 
-              onClick={onNavigateToTeam}
-              className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <Users className="w-4 h-4" />
-              Team
-            </button>
-            <button 
-              onClick={onNavigateToEquipment}
-              className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <Package className="w-4 h-4" />
-              Equipment
-            </button>
-          </nav>
+          <NavigationMenu
+            currentRoute={currentRoute}
+            onNavigateToDashboard={onNavigateToDashboard}
+            onNavigateToGigs={onNavigateToGigs}
+            onNavigateToTeam={onNavigateToTeam}
+            onNavigateToAssets={onNavigateToAssets}
+          />
         )}
       </div>
     </div>

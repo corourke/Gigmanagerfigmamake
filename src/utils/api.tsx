@@ -950,3 +950,543 @@ export async function getGigs(organizationId: string) {
 export async function getOrganizations(type?: string) {
   return searchOrganizations(type ? { type } : undefined);
 }
+
+// ===== Asset Management =====
+
+export async function getAssets(organizationId: string, filters?: {
+  category?: string;
+  sub_category?: string;
+  insurance_added?: boolean;
+  search?: string;
+}) {
+  let query = supabase
+    .from('assets')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .order('manufacturer_model');
+
+  if (filters?.category) {
+    query = query.eq('category', filters.category);
+  }
+
+  if (filters?.sub_category) {
+    query = query.eq('sub_category', filters.sub_category);
+  }
+
+  if (filters?.insurance_added !== undefined) {
+    query = query.eq('insurance_policy_added', filters.insurance_added);
+  }
+
+  if (filters?.search) {
+    query = query.or(`manufacturer_model.ilike.%${filters.search}%,serial_number.ilike.%${filters.search}%,description.ilike.%${filters.search}%`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching assets:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function getAsset(assetId: string) {
+  const { data, error } = await supabase
+    .from('assets')
+    .select('*')
+    .eq('id', assetId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching asset:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function createAsset(assetData: {
+  organization_id: string;
+  category: string;
+  manufacturer_model: string;
+  serial_number?: string;
+  acquisition_date?: string;
+  vendor?: string;
+  cost?: number;
+  replacement_value?: number;
+  sub_category?: string;
+  type?: string;
+  description?: string;
+  insurance_policy_added?: boolean;
+}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  const { data, error } = await supabase
+    .from('assets')
+    .insert({
+      ...assetData,
+      created_by: user.id,
+      updated_by: user.id,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating asset:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function updateAsset(assetId: string, assetData: {
+  category?: string;
+  manufacturer_model?: string;
+  serial_number?: string;
+  acquisition_date?: string;
+  vendor?: string;
+  cost?: number;
+  replacement_value?: number;
+  sub_category?: string;
+  type?: string;
+  description?: string;
+  insurance_policy_added?: boolean;
+}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  const { data, error } = await supabase
+    .from('assets')
+    .update({
+      ...assetData,
+      updated_by: user.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', assetId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating asset:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function deleteAsset(assetId: string) {
+  const { error } = await supabase
+    .from('assets')
+    .delete()
+    .eq('id', assetId);
+
+  if (error) {
+    console.error('Error deleting asset:', error);
+    throw error;
+  }
+
+  return { success: true };
+}
+
+// ===== Kit Management =====
+
+export async function getKits(organizationId: string, filters?: {
+  category?: string;
+  search?: string;
+}) {
+  let query = supabase
+    .from('kits')
+    .select(`
+      *,
+      kit_assets!inner(
+        quantity,
+        asset:assets(*)
+      )
+    `)
+    .eq('organization_id', organizationId)
+    .order('name');
+
+  if (filters?.category) {
+    query = query.eq('category', filters.category);
+  }
+
+  if (filters?.search) {
+    query = query.or(`name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching kits:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function getKit(kitId: string) {
+  const { data, error } = await supabase
+    .from('kits')
+    .select(`
+      *,
+      kit_assets(
+        id,
+        quantity,
+        notes,
+        asset:assets(*)
+      )
+    `)
+    .eq('id', kitId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching kit:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function createKit(kitData: {
+  organization_id: string;
+  name: string;
+  category?: string;
+  description?: string;
+  tags?: string[];
+  assets: Array<{
+    asset_id: string;
+    quantity: number;
+    notes?: string;
+  }>;
+}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  const { assets, ...restKitData } = kitData;
+
+  // Create kit
+  const { data: kit, error: kitError } = await supabase
+    .from('kits')
+    .insert({
+      ...restKitData,
+      created_by: user.id,
+      updated_by: user.id,
+    })
+    .select()
+    .single();
+
+  if (kitError) {
+    console.error('Error creating kit:', kitError);
+    throw kitError;
+  }
+
+  // Add assets to kit
+  if (assets && assets.length > 0) {
+    const kitAssets = assets.map(a => ({
+      kit_id: kit.id,
+      asset_id: a.asset_id,
+      quantity: a.quantity,
+      notes: a.notes || null,
+    }));
+
+    const { error: assetsError } = await supabase
+      .from('kit_assets')
+      .insert(kitAssets);
+
+    if (assetsError) {
+      console.error('Error adding assets to kit:', assetsError);
+      // Clean up kit if asset insertion fails
+      await supabase.from('kits').delete().eq('id', kit.id);
+      throw assetsError;
+    }
+  }
+
+  return kit;
+}
+
+export async function updateKit(kitId: string, kitData: {
+  name?: string;
+  category?: string;
+  description?: string;
+  tags?: string[];
+  assets?: Array<{
+    id?: string;
+    asset_id: string;
+    quantity: number;
+    notes?: string;
+  }>;
+}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  const { assets, ...restKitData } = kitData;
+
+  // Update kit basic info
+  const { error: updateError } = await supabase
+    .from('kits')
+    .update({
+      ...restKitData,
+      updated_by: user.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', kitId);
+
+  if (updateError) {
+    console.error('Error updating kit:', updateError);
+    throw updateError;
+  }
+
+  // Update kit assets if provided
+  if (assets) {
+    // Get existing kit assets
+    const { data: existingAssets } = await supabase
+      .from('kit_assets')
+      .select('id')
+      .eq('kit_id', kitId);
+
+    const existingIds = existingAssets?.map(a => a.id) || [];
+    const incomingIds = assets.filter(a => a.id).map(a => a.id!);
+
+    // Delete assets that are no longer in the list
+    const idsToDelete = existingIds.filter(id => !incomingIds.includes(id));
+    if (idsToDelete.length > 0) {
+      await supabase
+        .from('kit_assets')
+        .delete()
+        .in('id', idsToDelete);
+    }
+
+    // Update or insert assets
+    for (const asset of assets) {
+      if (asset.id && existingIds.includes(asset.id)) {
+        // Update existing
+        await supabase
+          .from('kit_assets')
+          .update({
+            asset_id: asset.asset_id,
+            quantity: asset.quantity,
+            notes: asset.notes || null,
+          })
+          .eq('id', asset.id);
+      } else {
+        // Insert new
+        await supabase
+          .from('kit_assets')
+          .insert({
+            kit_id: kitId,
+            asset_id: asset.asset_id,
+            quantity: asset.quantity,
+            notes: asset.notes || null,
+          });
+      }
+    }
+  }
+
+  return getKit(kitId);
+}
+
+export async function deleteKit(kitId: string) {
+  const { error } = await supabase
+    .from('kits')
+    .delete()
+    .eq('id', kitId);
+
+  if (error) {
+    console.error('Error deleting kit:', error);
+    throw error;
+  }
+
+  return { success: true };
+}
+
+export async function duplicateKit(kitId: string, newName?: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  // Get original kit with assets
+  const originalKit = await getKit(kitId);
+
+  // Create new kit
+  const { data: newKit, error: kitError } = await supabase
+    .from('kits')
+    .insert({
+      organization_id: originalKit.organization_id,
+      name: newName || `${originalKit.name} (Copy)`,
+      category: originalKit.category,
+      description: originalKit.description,
+      tags: originalKit.tags || [],
+      created_by: user.id,
+      updated_by: user.id,
+    })
+    .select()
+    .single();
+
+  if (kitError) {
+    console.error('Error duplicating kit:', kitError);
+    throw kitError;
+  }
+
+  // Copy assets
+  if (originalKit.kit_assets && originalKit.kit_assets.length > 0) {
+    const kitAssets = originalKit.kit_assets.map((ka: any) => ({
+      kit_id: newKit.id,
+      asset_id: ka.asset.id,
+      quantity: ka.quantity,
+      notes: ka.notes,
+    }));
+
+    const { error: assetsError } = await supabase
+      .from('kit_assets')
+      .insert(kitAssets);
+
+    if (assetsError) {
+      console.error('Error copying kit assets:', assetsError);
+      await supabase.from('kits').delete().eq('id', newKit.id);
+      throw assetsError;
+    }
+  }
+
+  return newKit;
+}
+
+// ===== Gig Kit Assignment =====
+
+export async function assignKitToGig(gigId: string, kitId: string, organizationId: string, notes?: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  const { data, error } = await supabase
+    .from('gig_kit_assignments')
+    .insert({
+      gig_id: gigId,
+      kit_id: kitId,
+      organization_id: organizationId,
+      notes: notes || null,
+      assigned_by: user.id,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error assigning kit to gig:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function removeKitFromGig(assignmentId: string) {
+  const { error } = await supabase
+    .from('gig_kit_assignments')
+    .delete()
+    .eq('id', assignmentId);
+
+  if (error) {
+    console.error('Error removing kit from gig:', error);
+    throw error;
+  }
+
+  return { success: true };
+}
+
+export async function getGigKits(gigId: string) {
+  const { data, error } = await supabase
+    .from('gig_kit_assignments')
+    .select(`
+      *,
+      kit:kits(
+        *,
+        kit_assets(
+          quantity,
+          notes,
+          asset:assets(*)
+        )
+      )
+    `)
+    .eq('gig_id', gigId);
+
+  if (error) {
+    console.error('Error fetching gig kits:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function checkKitConflicts(kitId: string, gigId: string, startTime: string, endTime: string) {
+  // Get kit assets
+  const kit = await getKit(kitId);
+  
+  if (!kit.kit_assets || kit.kit_assets.length === 0) {
+    return { conflicts: [] };
+  }
+
+  const assetIds = kit.kit_assets.map((ka: any) => ka.asset.id);
+
+  // Find all gigs that:
+  // 1. Are not the current gig
+  // 2. Have overlapping time ranges
+  // 3. Have kits assigned that use the same assets
+  const { data: overlappingGigs, error } = await supabase
+    .from('gigs')
+    .select(`
+      id,
+      title,
+      start,
+      end,
+      gig_kit_assignments!inner(
+        kit:kits!inner(
+          kit_assets!inner(
+            asset_id
+          )
+        )
+      )
+    `)
+    .neq('id', gigId)
+    .lte('start', endTime)
+    .gte('end', startTime);
+
+  if (error) {
+    console.error('Error checking kit conflicts:', error);
+    return { conflicts: [] };
+  }
+
+  // Filter to only gigs that use the same assets
+  const conflicts: Array<{
+    gig_id: string;
+    gig_title: string;
+    start: string;
+    end: string;
+    conflicting_assets: string[];
+  }> = [];
+
+  for (const gig of overlappingGigs || []) {
+    const gigAssetIds = new Set<string>();
+    for (const assignment of gig.gig_kit_assignments || []) {
+      for (const kitAsset of assignment.kit?.kit_assets || []) {
+        gigAssetIds.add(kitAsset.asset_id);
+      }
+    }
+
+    const conflictingAssetIds = assetIds.filter(id => gigAssetIds.has(id));
+    if (conflictingAssetIds.length > 0) {
+      conflicts.push({
+        gig_id: gig.id,
+        gig_title: gig.title,
+        start: gig.start,
+        end: gig.end,
+        conflicting_assets: conflictingAssetIds,
+      });
+    }
+  }
+
+  return { conflicts };
+}
