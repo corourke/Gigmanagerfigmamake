@@ -38,6 +38,8 @@ interface FormData {
   type: string;
   description: string;
   insurance_policy_added: boolean;
+  insurance_class: string;
+  quantity: string;
 }
 
 const SUGGESTED_CATEGORIES = [
@@ -81,6 +83,8 @@ export default function CreateAssetScreen({
     type: '',
     description: '',
     insurance_policy_added: false,
+    insurance_class: '',
+    quantity: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -110,6 +114,8 @@ export default function CreateAssetScreen({
         type: asset.type || '',
         description: asset.description || '',
         insurance_policy_added: asset.insurance_policy_added || false,
+        insurance_class: asset.insurance_class || '',
+        quantity: asset.quantity?.toString() || '',
       });
     } catch (error: any) {
       console.error('Error loading asset:', error);
@@ -155,6 +161,10 @@ export default function CreateAssetScreen({
       newErrors.replacement_value = 'Replacement value must be a valid number';
     }
 
+    if (formData.quantity && (isNaN(parseInt(formData.quantity)) || parseInt(formData.quantity) < 1)) {
+      newErrors.quantity = 'Quantity must be a positive number';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -182,6 +192,8 @@ export default function CreateAssetScreen({
         type: formData.type.trim() || undefined,
         description: formData.description.trim() || undefined,
         insurance_policy_added: formData.insurance_policy_added,
+        insurance_class: formData.insurance_class.trim() || undefined,
+        quantity: formData.quantity ? parseInt(formData.quantity) : undefined,
       };
 
       if (isEditMode && assetId) {
@@ -288,7 +300,7 @@ export default function CreateAssetScreen({
 
                 <div className="md:col-span-2 space-y-2">
                   <Label htmlFor="manufacturer_model">
-                    Manufacturer/Model <span className="text-red-500">*</span>
+                    Manufacturer and Model <span className="text-red-500">*</span>
                   </Label>
                   <Input
                     id="manufacturer_model"
@@ -306,7 +318,7 @@ export default function CreateAssetScreen({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="type">Type</Label>
+                  <Label htmlFor="type">Equipment Type</Label>
                   <Input
                     id="type"
                     value={formData.type}
@@ -324,6 +336,28 @@ export default function CreateAssetScreen({
                     placeholder="Unique serial number"
                     className="font-mono"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantity</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="1"
+                    value={formData.quantity}
+                    onChange={(e) => handleChange('quantity', e.target.value)}
+                    placeholder="1"
+                    className={errors.quantity ? 'border-red-500' : ''}
+                  />
+                  <p className="text-xs text-gray-500">
+                    For bulk assets that don't have unique serial numbers
+                  </p>
+                  {errors.quantity && (
+                    <p className="text-sm text-red-600 flex items-center gap-1">
+                      <AlertCircle className="w-4 h-4" />
+                      {errors.quantity}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -416,20 +450,36 @@ export default function CreateAssetScreen({
             {/* Insurance */}
             <div>
               <h3 className="text-gray-900 mb-4">Insurance</h3>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="insurance_policy_added"
-                  checked={formData.insurance_policy_added}
-                  onCheckedChange={(checked) =>
-                    handleChange('insurance_policy_added', !!checked)
-                  }
-                />
-                <Label
-                  htmlFor="insurance_policy_added"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  This asset has been added to an insurance policy
-                </Label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-normal">Insured</Label>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="insurance_policy_added"
+                      checked={formData.insurance_policy_added}
+                      onCheckedChange={(checked) =>
+                        handleChange('insurance_policy_added', !!checked)
+                      }
+                    />
+                    <Label
+                      htmlFor="insurance_policy_added"
+                      className="text-sm font-normal cursor-pointer"
+                    >This asset has been added to an insurance policy.</Label>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="insurance_class">Insurance Class</Label>
+                  <Input
+                    id="insurance_class"
+                    value={formData.insurance_class}
+                    onChange={(e) => handleChange('insurance_class', e.target.value)}
+                    placeholder="e.g., Class A, Premium Coverage"
+                  />
+                  <p className="text-xs text-gray-500">
+                    The category used by your insurance company.
+                  </p>
+                </div>
               </div>
             </div>
 

@@ -214,8 +214,10 @@ export default function AssetListScreen({
                     <TableHead>Category</TableHead>
                     <TableHead>Manufacturer/Model</TableHead>
                     <TableHead>Serial Number</TableHead>
+                    <TableHead>Quantity</TableHead>
                     <TableHead>Replacement Value</TableHead>
                     <TableHead>Insurance</TableHead>
+                    <TableHead>Insurance Class</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -243,6 +245,11 @@ export default function AssetListScreen({
                       </TableCell>
                       <TableCell>
                         <div className="text-sm text-gray-900">
+                          {asset.quantity || '1'}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-gray-900">
                           {formatCurrency(asset.replacement_value)}
                         </div>
                       </TableCell>
@@ -257,6 +264,11 @@ export default function AssetListScreen({
                             Not Insured
                           </Badge>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-gray-900">
+                          {asset.insurance_class || '—'}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">

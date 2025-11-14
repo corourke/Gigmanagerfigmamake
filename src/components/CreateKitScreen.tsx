@@ -46,6 +46,8 @@ interface FormData {
   category: string;
   description: string;
   tags: string[];
+  tag_number: string;
+  rental_value: string;
 }
 
 interface KitAsset {
@@ -76,6 +78,8 @@ export default function CreateKitScreen({
     category: '',
     description: '',
     tags: [],
+    tag_number: '',
+    rental_value: '',
   });
   const [kitAssets, setKitAssets] = useState<KitAsset[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -106,6 +110,8 @@ export default function CreateKitScreen({
         category: kit.category || '',
         description: kit.description || '',
         tags: kit.tags || [],
+        tag_number: kit.tag_number || '',
+        rental_value: kit.rental_value?.toString() || '',
       });
       
       setKitAssets(
@@ -234,6 +240,8 @@ export default function CreateKitScreen({
         category: formData.category.trim() || undefined,
         description: formData.description.trim() || undefined,
         tags: formData.tags,
+        tag_number: formData.tag_number.trim() || undefined,
+        rental_value: formData.rental_value ? parseFloat(formData.rental_value) : undefined,
         assets: kitAssets.map((ka) => ({
           id: ka.id,
           asset_id: ka.asset_id,
@@ -392,6 +400,41 @@ export default function CreateKitScreen({
                       ))}
                     </div>
                   )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="tag_number">Tag Number</Label>
+                  <Input
+                    id="tag_number"
+                    value={formData.tag_number}
+                    onChange={(e) => handleChange('tag_number', e.target.value)}
+                    placeholder="e.g., KIT-001, LGT-A"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Physical tag or identifier for this kit
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rental_value">Rental Value</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                      $
+                    </span>
+                    <Input
+                      id="rental_value"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.rental_value}
+                      onChange={(e) => handleChange('rental_value', e.target.value)}
+                      placeholder="0.00"
+                      className="pl-7"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Daily or event rental rate for this kit
+                  </p>
                 </div>
               </div>
             </Card>

@@ -118,3 +118,13 @@ END $$;
 -- ✅ kit_assets (if exists)
 
 -- Done! All circular dependency issues should now be resolved.
+
+-- Add insurance_class and quantity columns to assets table
+ALTER TABLE assets 
+ADD COLUMN IF NOT EXISTS insurance_class TEXT,
+ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1;
+
+-- Add tag_number and rental_value columns to kits table
+ALTER TABLE kits
+ADD COLUMN IF NOT EXISTS tag_number TEXT,
+ADD COLUMN IF NOT EXISTS rental_value DECIMAL(10,2);

@@ -91,6 +91,7 @@ interface GigListScreenProps {
   onViewGig: (gigId: string) => void;
   onNavigateToDashboard: () => void;
   onNavigateToGigs: () => void;
+  onNavigateToAssets: () => void;
   onSwitchOrganization: () => void;
   onLogout: () => void;
   useMockData?: boolean;
@@ -258,6 +259,7 @@ export default function GigListScreen({
   onViewGig,
   onNavigateToDashboard,
   onNavigateToGigs,
+  onNavigateToAssets,
   onSwitchOrganization,
   onLogout,
   useMockData = false,
@@ -685,6 +687,7 @@ export default function GigListScreen({
         currentRoute="gig-list"
         onNavigateToDashboard={onNavigateToDashboard}
         onNavigateToGigs={onNavigateToGigs}
+        onNavigateToAssets={onNavigateToAssets}
         onSwitchOrganization={onSwitchOrganization}
         onLogout={onLogout}
       />

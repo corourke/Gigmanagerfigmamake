@@ -150,6 +150,11 @@ export default function KitDetailScreen({
                   {kit.category}
                 </Badge>
               )}
+              {kit.tag_number && (
+                <div className="text-sm text-gray-600 mt-2">
+                  <span className="font-medium">Tag Number:</span> {kit.tag_number}
+                </div>
+              )}
               {kit.description && (
                 <p className="text-gray-600 mt-2">{kit.description}</p>
               )}
@@ -194,7 +199,7 @@ export default function KitDetailScreen({
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card className="p-6">
             <p className="text-sm text-gray-600 mb-1">Total Assets</p>
             <p className="text-3xl text-gray-900">{kit.kit_assets?.length || 0}</p>
@@ -206,6 +211,10 @@ export default function KitDetailScreen({
           <Card className="p-6">
             <p className="text-sm text-gray-600 mb-1">Total Value</p>
             <p className="text-3xl text-gray-900">{formatCurrency(getTotalValue())}</p>
+          </Card>
+          <Card className="p-6">
+            <p className="text-sm text-gray-600 mb-1">Rental Value</p>
+            <p className="text-3xl text-gray-900">{formatCurrency(kit.rental_value || 0)}</p>
           </Card>
         </div>
 

@@ -300,7 +300,8 @@ function App() {
           onCreateGig={handleCreateGig}
           onViewGig={handleViewGig}
           onNavigateToDashboard={handleBackToDashboard}
-          onNavigateToGigs={() => {}}
+          onNavigateToGigs={handleBackToGigList}
+          onNavigateToAssets={handleNavigateToAssets}
           onSwitchOrganization={handleBackToSelection}
           onLogout={handleLogout}
           useMockData={USE_MOCK_DATA}

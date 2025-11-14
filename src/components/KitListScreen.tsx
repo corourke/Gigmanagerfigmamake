@@ -219,8 +219,10 @@ export default function KitListScreen({
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Category</TableHead>
+                    <TableHead>Tag Number</TableHead>
                     <TableHead>Assets</TableHead>
                     <TableHead>Total Value</TableHead>
+                    <TableHead>Rental Value</TableHead>
                     <TableHead>Tags</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -245,12 +247,22 @@ export default function KitListScreen({
                       </TableCell>
                       <TableCell onClick={() => onViewKit(kit.id)}>
                         <div className="text-sm text-gray-900">
+                          {kit.tag_number || '—'}
+                        </div>
+                      </TableCell>
+                      <TableCell onClick={() => onViewKit(kit.id)}>
+                        <div className="text-sm text-gray-900">
                           {getKitAssetCount(kit)} items
                         </div>
                       </TableCell>
                       <TableCell onClick={() => onViewKit(kit.id)}>
                         <div className="text-sm text-gray-900">
                           {formatCurrency(getKitTotalValue(kit))}
+                        </div>
+                      </TableCell>
+                      <TableCell onClick={() => onViewKit(kit.id)}>
+                        <div className="text-sm text-gray-900">
+                          {formatCurrency(kit.rental_value || 0)}
                         </div>
                       </TableCell>
                       <TableCell onClick={() => onViewKit(kit.id)}>

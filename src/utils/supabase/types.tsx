@@ -157,11 +157,13 @@ export interface DbAsset {
   category: string;
   sub_category?: string;
   insurance_policy_added: boolean;
+  insurance_class?: string;
   manufacturer_model: string;
   type?: string;
   serial_number?: string;
   description?: string;
   replacement_value?: number;
+  quantity?: number;
   created_by: string;
   updated_by: string;
   created_at: string;
@@ -175,6 +177,8 @@ export interface DbKit {
   category?: string;
   description?: string;
   tags: string[];
+  tag_number?: string;
+  rental_value?: number;
   created_by: string;
   updated_by: string;
   created_at: string;
