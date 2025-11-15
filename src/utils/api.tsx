@@ -779,18 +779,25 @@ export async function updateGig(gigId: string, gigData: {
 
   // Update staff slots and assignments
   if (staff_slots && staff_slots.length > 0) {
+    console.log('🔍 DEBUG - API updateGig - Processing staff_slots:', JSON.stringify(staff_slots, null, 2));
+    
     // Get existing staff slots
     const { data: existingSlots } = await supabase
       .from('gig_staff_slots')
       .select('id')
       .eq('gig_id', gigId);
 
+    console.log('🔍 DEBUG - API updateGig - Existing slot IDs:', existingSlots?.map(s => s.id));
+
     const existingSlotIds = existingSlots?.map(s => s.id) || [];
     const incomingSlotIds = staff_slots.filter(s => s.id).map(s => s.id!);
+
+    console.log('🔍 DEBUG - API updateGig - Incoming slot IDs:', incomingSlotIds);
 
     // Delete slots that are no longer in the list (cascades to assignments)
     const slotIdsToDelete = existingSlotIds.filter(id => !incomingSlotIds.includes(id));
     if (slotIdsToDelete.length > 0) {
+      console.log('🔍 DEBUG - API updateGig - Deleting slots:', slotIdsToDelete);
       await supabase
         .from('gig_staff_slots')
         .delete()
@@ -799,6 +806,12 @@ export async function updateGig(gigId: string, gigData: {
 
     // Update or insert staff slots
     for (const slot of staff_slots) {
+      console.log('🔍 DEBUG - API updateGig - Processing slot:', { 
+        role: slot.role, 
+        hasId: !!slot.id,
+        assignmentCount: slot.assignments?.length || 0 
+      });
+      
       // Get or create staff role
       let staffRoleId: string | null = null;
       
@@ -876,9 +889,16 @@ export async function updateGig(gigId: string, gigData: {
 
         // Update or insert assignments
         for (const assignment of slot.assignments) {
+          console.log('🔍 DEBUG - API updateGig - Processing assignment:', {
+            hasId: !!assignment.id,
+            user_id: assignment.user_id,
+            status: assignment.status
+          });
+          
           if (assignment.id && existingAssignmentIds.includes(assignment.id)) {
             // Update existing assignment
-            await supabase
+            console.log('🔍 DEBUG - API updateGig - Updating existing assignment:', assignment.id);
+            const { error: updateError } = await supabase
               .from('gig_staff_assignments')
               .update({
                 user_id: assignment.user_id,
@@ -888,18 +908,37 @@ export async function updateGig(gigId: string, gigData: {
                 notes: assignment.notes || null,
               })
               .eq('id', assignment.id);
+            
+            if (updateError) {
+              console.error('🔍 DEBUG - API updateGig - ERROR updating assignment:', updateError);
+            } else {
+              console.log('🔍 DEBUG - API updateGig - Assignment updated successfully');
+            }
           } else if (assignment.user_id) {
             // Insert new assignment
-            await supabase
+            console.log('🔍 DEBUG - API updateGig - Inserting new assignment for slot_id:', slotId);
+            const insertData = {
+              slot_id: slotId,
+              user_id: assignment.user_id,
+              status: assignment.status || 'Requested',
+              rate: assignment.rate || null,
+              fee: assignment.fee || null,
+              notes: assignment.notes || null,
+            };
+            console.log('🔍 DEBUG - API updateGig - Insert data:', insertData);
+            
+            const { data: insertedAssignment, error: insertError } = await supabase
               .from('gig_staff_assignments')
-              .insert({
-                slot_id: slotId, // Fixed: column name is slot_id
-                user_id: assignment.user_id,
-                status: assignment.status || 'Requested',
-                rate: assignment.rate || null,
-                fee: assignment.fee || null,
-                notes: assignment.notes || null,
-              });
+              .insert(insertData)
+              .select();
+            
+            if (insertError) {
+              console.error('🔍 DEBUG - API updateGig - ERROR inserting assignment:', insertError);
+            } else {
+              console.log('🔍 DEBUG - API updateGig - Assignment inserted successfully:', insertedAssignment);
+            }
+          } else {
+            console.log('🔍 DEBUG - API updateGig - Skipping assignment (no user_id)');
           }
         }
       }

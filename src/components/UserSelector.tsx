@@ -33,8 +33,6 @@ export default function UserSelector({
   }, [value]);
 
   const handleSearch = async (query: string) => {
-    setInputValue(query);
-    
     if (!query.trim()) {
       setSearchResults([]);
       return;
@@ -55,10 +53,14 @@ export default function UserSelector({
   };
 
   const handleSelectUser = (user: User) => {
+    console.log('🔍 DEBUG - UserSelector - handleSelectUser called with user:', user);
     const fullName = `${user.first_name} ${user.last_name}`.trim();
     setInputValue(fullName);
-    onSelect(user);
     setIsOpen(false);
+    setSearchResults([]);
+    console.log('🔍 DEBUG - UserSelector - Calling onSelect callback');
+    onSelect(user);
+    console.log('🔍 DEBUG - UserSelector - onSelect callback completed');
   };
 
   return (
@@ -70,7 +72,10 @@ export default function UserSelector({
             ref={inputRef}
             type="text"
             value={inputValue}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              handleSearch(e.target.value);
+            }}
             onFocus={() => setIsOpen(true)}
             placeholder={placeholder}
             disabled={disabled}
@@ -98,8 +103,12 @@ export default function UserSelector({
                   return (
                     <CommandItem
                       key={user.id}
-                      value={user.id}
-                      onSelect={() => handleSelectUser(user)}
+                      onMouseDown={(e) => {
+                        console.log('🔍 DEBUG - UserSelector - CommandItem mousedown for user:', user.id);
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleSelectUser(user);
+                      }}
                       className="cursor-pointer"
                     >
                       <div className="flex items-center gap-3 w-full">

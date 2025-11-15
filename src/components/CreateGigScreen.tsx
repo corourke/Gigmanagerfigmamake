@@ -500,6 +500,7 @@ export default function CreateGigScreen({
 
   // Staff Assignment Management
   const handleAddStaffAssignment = (slotId: string) => {
+    console.log('🔍 DEBUG - handleAddStaffAssignment called for slotId:', slotId);
     const newAssignment: StaffAssignmentData = {
       id: Math.random().toString(36).substr(2, 9),
       user_id: '',
@@ -512,17 +513,25 @@ export default function CreateGigScreen({
     setStaffSlots(staffSlots.map(slot => 
       slot.id === slotId ? { ...slot, assignments: [...slot.assignments, newAssignment] } : slot
     ));
+    console.log('🔍 DEBUG - New assignment added:', newAssignment);
   };
 
   const handleUpdateStaffAssignment = (slotId: string, assignmentId: string, field: keyof StaffAssignmentData, value: string) => {
-    setStaffSlots(staffSlots.map(slot => 
-      slot.id === slotId ? {
-        ...slot,
-        assignments: slot.assignments.map(a => 
-          a.id === assignmentId ? { ...a, [field]: value } : a
-        )
-      } : slot
-    ));
+    console.log('🔍 DEBUG - handleUpdateStaffAssignment called:', { slotId, assignmentId, field, value });
+    setStaffSlots(prevSlots => {
+      const newSlots = prevSlots.map(slot => 
+        slot.id === slotId
+          ? {
+              ...slot,
+              assignments: slot.assignments.map(a => 
+                a.id === assignmentId ? { ...a, [field]: value } : a
+              )
+            }
+          : slot
+      );
+      console.log('🔍 DEBUG - handleUpdateStaffAssignment - NEW STATE:', JSON.stringify(newSlots, null, 2));
+      return newSlots;
+    });
   };
 
   const handleRemoveStaffAssignment = (slotId: string, assignmentId: string) => {
@@ -593,6 +602,17 @@ export default function CreateGigScreen({
             notes: p.notes || null,
           }));
 
+        console.log('🔍 DEBUG - UPDATE GIG - Raw staffSlots state before mapping:', JSON.stringify(staffSlots, null, 2));
+        console.log('🔍 DEBUG - UPDATE GIG - staffSlots length:', staffSlots.length);
+        staffSlots.forEach((slot, idx) => {
+          console.log(`🔍 DEBUG - UPDATE GIG - Raw Slot ${idx}:`, {
+            id: slot.id,
+            role: slot.role,
+            assignmentCount: slot.assignments?.length || 0,
+            assignments: slot.assignments
+          });
+        });
+
         gigData.staff_slots = staffSlots
           .filter(s => s.role && s.role.trim() !== '')
           .map(s => ({
@@ -612,6 +632,17 @@ export default function CreateGigScreen({
                 notes: a.notes || null,
               })),
           }));
+
+        console.log('🔍 DEBUG - UPDATE GIG - Staff slots being sent:', JSON.stringify(gigData.staff_slots, null, 2));
+        console.log('🔍 DEBUG - UPDATE GIG - Number of slots:', gigData.staff_slots.length);
+        gigData.staff_slots.forEach((slot, idx) => {
+          console.log(`🔍 DEBUG - UPDATE GIG - Slot ${idx}:`, {
+            role: slot.role,
+            count: slot.count,
+            assignmentCount: slot.assignments?.length || 0,
+            assignments: slot.assignments
+          });
+        });
 
         // Use API function instead of Edge Function
         if (!gigId) {
