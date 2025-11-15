@@ -1,10 +1,31 @@
+import { useState, useRef } from 'react';
+import { Building2, Search, Loader2, MapPin, Phone, Globe, Check, AlertCircle, X, ChevronLeft } from 'lucide-react';
+import { toast } from 'sonner@2.0.3';
 import type { Organization, OrganizationType } from '../App';
 import { createClient } from '../utils/supabase/client';
+import { projectId } from '../utils/supabase/info';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Card } from './ui/card';
+import { Badge } from './ui/badge';
+import { Alert, AlertDescription } from './ui/alert';
+import { Checkbox } from './ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
+import MarkdownEditor from './MarkdownEditor';
 
 const supabase = createClient();
 
 interface CreateOrganizationScreenProps {
+  organization?: Organization; // If provided, we're in edit mode
   onOrganizationCreated: (org: Organization) => void;
+  onOrganizationUpdated?: (org: Organization) => void;
   onCancel: () => void;
   userId?: string;
   useMockData?: boolean;
@@ -112,34 +133,39 @@ const MOCK_PLACES: GooglePlace[] = [
 ];
 
 export default function CreateOrganizationScreen({
+  organization,
   onOrganizationCreated,
+  onOrganizationUpdated,
   onCancel,
   userId,
   useMockData = false,
 }: CreateOrganizationScreenProps) {
+  const isEditMode = !!organization;
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<GooglePlace[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<GooglePlace | null>(null);
-  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(isEditMode); // Show form directly in edit mode
 
   const [formData, setFormData] = useState<FormData>({
-    name: '',
-    type: '',
-    url: '',
-    phone: '',
-    description: '',
-    address_line1: '',
-    address_line2: '',
-    city: '',
-    state: '',
-    postal_code: '',
-    country: '',
+    name: organization?.name || '',
+    type: organization?.type || '',
+    url: organization?.url || '',
+    phone: organization?.phone || '',
+    description: organization?.description || '',
+    address_line1: organization?.address_line1 || '',
+    address_line2: organization?.address_line2 || '',
+    city: organization?.city || '',
+    state: organization?.state || '',
+    postal_code: organization?.postal_code || '',
+    country: organization?.country || '',
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [autoJoin, setAutoJoin] = useState(true);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -195,7 +221,7 @@ export default function CreateOrganizationScreen({
       }
 
       // Build search URL with optional location parameters
-      let searchUrl = `https://${projectId}.supabase.co/functions/v1/server/integrations/google-places/search?query=${encodeURIComponent(searchQuery)}`;
+      let searchUrl = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/integrations/google-places/search?query=${encodeURIComponent(searchQuery)}`;
       if (userLocation) {
         searchUrl += `&latitude=${userLocation.latitude}&longitude=${userLocation.longitude}`;
       }
@@ -229,7 +255,7 @@ export default function CreateOrganizationScreen({
         placeResults.map(async (place: any) => {
           try {
             const detailsResponse = await fetch(
-              `https://${projectId}.supabase.co/functions/v1/server/integrations/google-places/${place.place_id}`,
+              `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/integrations/google-places/${place.place_id}`,
               {
                 headers: {
                   'Authorization': `Bearer ${session.access_token}`,
@@ -383,7 +409,7 @@ export default function CreateOrganizationScreen({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, autoJoinOrg: boolean = true) => {
     e.preventDefault();
 
     if (!validateForm()) {
@@ -397,7 +423,7 @@ export default function CreateOrganizationScreen({
     if (useMockData) {
       setTimeout(() => {
         const newOrganization: Organization = {
-          id: Math.random().toString(36).substr(2, 9),
+          id: organization?.id || Math.random().toString(36).substr(2, 9),
           name: formData.name.trim(),
           type: formData.type as OrganizationType,
           url: formData.url.trim() || undefined,
@@ -409,12 +435,17 @@ export default function CreateOrganizationScreen({
           state: formData.state.trim() || undefined,
           postal_code: formData.postal_code.trim() || undefined,
           country: formData.country.trim() || undefined,
-          created_at: new Date().toISOString(),
+          created_at: organization?.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
 
-        toast.success('Organization created successfully!');
-        onOrganizationCreated(newOrganization);
+        if (isEditMode) {
+          toast.success('Organization updated successfully!');
+          onOrganizationUpdated?.(newOrganization);
+        } else {
+          toast.success(autoJoinOrg ? 'Organization created successfully!' : 'Organization created without joining!');
+          onOrganizationCreated(newOrganization);
+        }
       }, 1500);
       return;
     }
@@ -430,40 +461,57 @@ export default function CreateOrganizationScreen({
         return;
       }
 
-      // Create organization via server endpoint
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/organizations`, {
-        method: 'POST',
+      const requestBody = {
+        name: formData.name.trim(),
+        type: formData.type,
+        url: formData.url.trim() || null,
+        phone_number: formData.phone.trim() || null,
+        description: formData.description.trim() || null,
+        address_line1: formData.address_line1.trim() || null,
+        address_line2: formData.address_line2.trim() || null,
+        city: formData.city.trim() || null,
+        state: formData.state.trim() || null,
+        postal_code: formData.postal_code.trim() || null,
+        country: formData.country.trim() || null,
+      };
+
+      let url = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/organizations`;
+      let method = 'POST';
+      
+      if (isEditMode && organization) {
+        url += `/${organization.id}`;
+        method = 'PUT';
+      } else {
+        // Only include auto_join for create mode
+        (requestBody as any).auto_join = autoJoinOrg;
+      }
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          name: formData.name.trim(),
-          type: formData.type,
-          url: formData.url.trim() || null,
-          phone_number: formData.phone.trim() || null,
-          description: formData.description.trim() || null,
-          address_line1: formData.address_line1.trim() || null,
-          address_line2: formData.address_line2.trim() || null,
-          city: formData.city.trim() || null,
-          state: formData.state.trim() || null,
-          postal_code: formData.postal_code.trim() || null,
-          country: formData.country.trim() || null,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create organization');
+        throw new Error(errorData.error || `Failed to ${isEditMode ? 'update' : 'create'} organization`);
       }
 
-      const newOrganization = await response.json();
+      const resultOrganization = await response.json();
 
-      toast.success('Organization created successfully!');
-      onOrganizationCreated(newOrganization);
+      if (isEditMode) {
+        toast.success('Organization updated successfully!');
+        onOrganizationUpdated?.(resultOrganization);
+      } else {
+        toast.success('Organization created successfully!');
+        onOrganizationCreated(resultOrganization);
+      }
     } catch (err: any) {
-      console.error('Error creating organization:', err);
-      setErrors({ general: err.message || 'Failed to create organization. Please try again.' });
+      console.error(`Error ${isEditMode ? 'updating' : 'creating'} organization:`, err);
+      setErrors({ general: err.message || `Failed to ${isEditMode ? 'update' : 'create'} organization. Please try again.` });
       setIsSubmitting(false);
     }
   };
@@ -496,12 +544,12 @@ export default function CreateOrganizationScreen({
       {/* Main Content */}
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-gray-900 mb-2">Create New Organization</h1>
-          <p className="text-gray-600">Search for your business or enter details manually</p>
+          <h1 className="text-gray-900 mb-2">{isEditMode ? 'Edit Organization' : 'Create New Organization'}</h1>
+          <p className="text-gray-600">{isEditMode ? 'Update organization details' : 'Search for your business or enter details manually'}</p>
         </div>
 
-        {/* Google Places Search */}
-        {!selectedPlace && (
+        {/* Google Places Search - Only show in create mode */}
+        {!isEditMode && !selectedPlace && (
           <Card className="p-6 mb-6">
             <h3 className="text-gray-900 mb-4">Find Your Business</h3>
             <p className="text-sm text-gray-600 mb-4">
@@ -856,20 +904,55 @@ export default function CreateOrganizationScreen({
                 >
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="bg-sky-500 hover:bg-sky-600 text-white sm:ml-auto"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating Organization...
-                    </>
-                  ) : (
-                    'Create and Join Organization'
-                  )}
-                </Button>
+                {isEditMode ? (
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="bg-sky-500 hover:bg-sky-600 text-white sm:ml-auto"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </Button>
+                ) : (
+                  <div className="flex flex-col sm:flex-row gap-2 sm:ml-auto">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={(e) => handleSubmit(e, false)}
+                      disabled={isSubmitting}
+                      className="border-sky-500 text-sky-600 hover:bg-sky-50"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        'Create without Joining'
+                      )}
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="bg-sky-500 hover:bg-sky-600 text-white"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        'Create and Join'
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             </form>
           </Card>

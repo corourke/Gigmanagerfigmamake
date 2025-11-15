@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import LoginScreen from './components/LoginScreen';
 import UserProfileCompletionScreen from './components/UserProfileCompletionScreen';
 import OrganizationSelectionScreen from './components/OrganizationSelectionScreen';
 import CreateOrganizationScreen from './components/CreateOrganizationScreen';
+import AdminOrganizationsScreen from './components/AdminOrganizationsScreen';
 import Dashboard from './components/Dashboard';
 import GigListScreen from './components/GigListScreen';
 import CreateGigScreen from './components/CreateGigScreen';
@@ -14,6 +15,7 @@ import CreateKitScreen from './components/CreateKitScreen';
 import KitDetailScreen from './components/KitDetailScreen';
 import { Toaster } from './components/ui/sonner';
 import { createClient } from './utils/supabase/client';
+import { toast } from 'sonner';
 
 export type OrganizationType = 
   | 'Production'
@@ -65,7 +67,9 @@ type Route =
   | 'login' 
   | 'profile-completion'
   | 'org-selection' 
-  | 'create-org' 
+  | 'create-org'
+  | 'edit-org'
+  | 'admin-orgs'
   | 'dashboard' 
   | 'gig-list'
   | 'create-gig'
@@ -84,6 +88,7 @@ function App() {
   const [selectedGigId, setSelectedGigId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
+  const [editingOrganization, setEditingOrganization] = useState<Organization | null>(null);
 
   // Get user's role in the current organization
   const getCurrentUserRole = (): UserRole | undefined => {
@@ -244,6 +249,43 @@ function App() {
     setCurrentRoute('kit-list');
   };
 
+  const handleNavigateToAdminOrgs = () => {
+    setCurrentRoute('admin-orgs');
+  };
+
+  const handleAdminEditOrganization = (org: Organization) => {
+    setEditingOrganization(org);
+    setCurrentRoute('edit-org');
+  };
+
+  const handleOrganizationUpdated = (updatedOrg: Organization) => {
+    // Update the organization in the user's organizations list
+    const updatedOrgs = userOrganizations.map(membership => 
+      membership.organization.id === updatedOrg.id
+        ? { ...membership, organization: updatedOrg }
+        : membership
+    );
+    setUserOrganizations(updatedOrgs);
+    
+    // If this is the currently selected organization, update it
+    if (selectedOrganization?.id === updatedOrg.id) {
+      setSelectedOrganization(updatedOrg);
+    }
+    
+    // Navigate back to admin orgs list
+    setEditingOrganization(null);
+    setCurrentRoute('admin-orgs');
+  };
+
+  const handleCancelEditOrganization = () => {
+    setEditingOrganization(null);
+    setCurrentRoute('admin-orgs');
+  };
+
+  const handleBackFromAdmin = () => {
+    setCurrentRoute('org-selection');
+  };
+
   return (
     <>
       {currentRoute === 'login' && (
@@ -265,6 +307,7 @@ function App() {
           organizations={userOrganizations}
           onSelectOrganization={handleSelectOrganization}
           onCreateOrganization={handleCreateOrganization}
+          onAdminViewAll={handleNavigateToAdminOrgs}
         />
       )}
       
@@ -274,6 +317,15 @@ function App() {
           onCancel={handleBackToSelection}
           userId={currentUser.id}
           useMockData={USE_MOCK_DATA}
+        />
+      )}
+      
+      {currentRoute === 'edit-org' && currentUser && editingOrganization && (
+        <CreateOrganizationScreen
+          organization={editingOrganization}
+          onOrganizationCreated={handleOrganizationCreated}
+          onOrganizationUpdated={handleOrganizationUpdated}
+          onCancel={handleCancelEditOrganization}
         />
       )}
       
@@ -421,6 +473,14 @@ function App() {
           onNavigateToGigs={handleBackToGigList}
           onSwitchOrganization={handleBackToSelection}
           onLogout={handleLogout}
+        />
+      )}
+      
+      {currentRoute === 'admin-orgs' && currentUser && (
+        <AdminOrganizationsScreen
+          onEditOrganization={handleAdminEditOrganization}
+          onCreateOrganization={handleCreateOrganization}
+          onBack={handleBackFromAdmin}
         />
       )}
       

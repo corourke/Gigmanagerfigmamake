@@ -108,8 +108,13 @@ const corsHeaders = {
 // ===== Main Handler =====
 Deno.serve(async (req) => {
   const url = new URL(req.url);
-  const path = url.pathname;
+  let path = url.pathname;
   const method = req.method;
+
+  // Strip the /make-server-de012ad4 prefix if present
+  if (path.startsWith('/make-server-de012ad4')) {
+    path = path.substring('/make-server-de012ad4'.length);
+  }
 
   // Handle CORS preflight
   if (method === 'OPTIONS') {
@@ -346,7 +351,7 @@ Deno.serve(async (req) => {
 
     // ===== Organization Management =====
     
-    // Search organizations
+    // Get all organizations (admin endpoint)
     if (path === '/organizations' && method === 'GET') {
       const authHeader = req.headers.get('Authorization');
       const { user, error: authError } = await getAuthenticatedUser(authHeader);
@@ -358,33 +363,21 @@ Deno.serve(async (req) => {
         });
       }
 
-      const type = url.searchParams.get('type');
-      const search = url.searchParams.get('search');
-
-      let query = supabaseAdmin
+      // Fetch all organizations
+      const { data: organizations, error: orgError } = await supabaseAdmin
         .from('organizations')
         .select('*')
         .order('name');
 
-      if (type) {
-        query = query.eq('type', type);
-      }
-
-      if (search) {
-        query = query.ilike('name', `%${search}%`);
-      }
-
-      const { data, error } = await query.limit(20);
-
-      if (error) {
-        console.error('Error fetching organizations:', error);
-        return new Response(JSON.stringify({ error: error.message }), {
+      if (orgError) {
+        console.error('Error fetching organizations:', orgError);
+        return new Response(JSON.stringify({ error: orgError.message }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      return new Response(JSON.stringify(data), {
+      return new Response(JSON.stringify(organizations || []), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -402,11 +395,12 @@ Deno.serve(async (req) => {
       }
 
       const body = await req.json();
+      const { auto_join = true, ...orgData } = body;
 
       // Create organization
       const { data: org, error: orgError } = await supabaseAdmin
         .from('organizations')
-        .insert(body)
+        .insert(orgData)
         .select()
         .single();
 
@@ -418,26 +412,160 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Add creator as Admin member
-      const { error: memberError } = await supabaseAdmin
-        .from('organization_members')
-        .insert({
-          organization_id: org.id,
-          user_id: user.id,
-          role: 'Admin',
-        });
+      // Add creator as Admin member (unless auto_join is false)
+      if (auto_join) {
+        const { error: memberError } = await supabaseAdmin
+          .from('organization_members')
+          .insert({
+            organization_id: org.id,
+            user_id: user.id,
+            role: 'Admin',
+          });
 
-      if (memberError) {
-        console.error('Error adding organization member:', memberError);
-        // Try to clean up the created org
-        await supabaseAdmin.from('organizations').delete().eq('id', org.id);
-        return new Response(JSON.stringify({ error: memberError.message }), {
+        if (memberError) {
+          console.error('Error adding organization member:', memberError);
+          // Try to clean up the created org
+          await supabaseAdmin.from('organizations').delete().eq('id', org.id);
+          return new Response(JSON.stringify({ error: memberError.message }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      return new Response(JSON.stringify(org), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Update organization
+    const orgMatch = path.match(/^\/organizations\/([^\/]+)$/);
+    if (orgMatch && method === 'PUT') {
+      const orgId = orgMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Check if organization exists
+      const { data: org, error: orgError } = await supabaseAdmin
+        .from('organizations')
+        .select('*')
+        .eq('id', orgId)
+        .single();
+
+      if (orgError || !org) {
+        return new Response(JSON.stringify({ error: 'Organization not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Parse request body
+      const body = await req.json();
+      const {
+        name,
+        type,
+        url,
+        phone_number,
+        description,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        postal_code,
+        country,
+      } = body;
+
+      // Validate required fields
+      if (!name || !type) {
+        return new Response(JSON.stringify({ error: 'Name and type are required' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      return new Response(JSON.stringify(org), {
+      // Update organization
+      const { data: updatedOrg, error: updateError } = await supabaseAdmin
+        .from('organizations')
+        .update({
+          name,
+          type,
+          url,
+          phone: phone_number,
+          description,
+          address_line1,
+          address_line2,
+          city,
+          state,
+          postal_code,
+          country,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orgId)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Error updating organization:', updateError);
+        return new Response(JSON.stringify({ error: updateError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(updatedOrg), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Delete organization
+    if (orgMatch && method === 'DELETE') {
+      const orgId = orgMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Check if organization exists
+      const { data: org, error: orgError } = await supabaseAdmin
+        .from('organizations')
+        .select('*')
+        .eq('id', orgId)
+        .single();
+
+      if (orgError || !org) {
+        return new Response(JSON.stringify({ error: 'Organization not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Delete the organization (cascade will handle members, gigs, etc.)
+      const { error: deleteError } = await supabaseAdmin
+        .from('organizations')
+        .delete()
+        .eq('id', orgId);
+
+      if (deleteError) {
+        console.error('Error deleting organization:', deleteError);
+        return new Response(JSON.stringify({ error: deleteError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -505,6 +633,38 @@ Deno.serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ organization: org, role: membership.role }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Get organization members
+    if (orgMembersMatch && method === 'GET') {
+      const orgId = orgMembersMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Fetch organization members
+      const { data: members, error: membersError } = await supabaseAdmin
+        .from('organization_members')
+        .select('*, user:users(*)')
+        .eq('organization_id', orgId);
+
+      if (membersError) {
+        console.error('Error fetching organization members:', membersError);
+        return new Response(JSON.stringify({ error: membersError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(members || []), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

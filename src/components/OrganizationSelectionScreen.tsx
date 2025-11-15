@@ -9,10 +9,6 @@ import {
   Search,
   Plus,
   Building2,
-  Music,
-  Lightbulb,
-  Warehouse,
-  MapPin,
   AlertCircle,
   ChevronRight,
   Loader2,
@@ -20,25 +16,16 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { searchOrganizations, joinOrganization } from '../utils/api';
-import type { User, Organization, OrganizationMembership, OrganizationType, UserRole } from '../App';
+import { ORG_TYPE_CONFIG } from '../utils/org-icons';
+import type { User, Organization, OrganizationMembership, UserRole } from '../App';
 
 interface OrganizationSelectionScreenProps {
   user: User;
   organizations: OrganizationMembership[];
   onSelectOrganization: (org: Organization) => void;
   onCreateOrganization: () => void;
+  onAdminViewAll?: () => void;
 }
-
-const ORG_TYPE_CONFIG: Record<OrganizationType, { label: string; icon: typeof Building2; color: string }> = {
-  Production: { label: 'Production Company', icon: Building2, color: 'bg-sky-100 text-sky-700' },
-  Sound: { label: 'Sound Company', icon: Lightbulb, color: 'bg-amber-100 text-amber-700' },
-  Lighting: { label: 'Lighting Company', icon: Lightbulb, color: 'bg-yellow-100 text-yellow-700' },
-  Staging: { label: 'Staging Company', icon: Warehouse, color: 'bg-indigo-100 text-indigo-700' },
-  Rentals: { label: 'Rental Company', icon: Warehouse, color: 'bg-purple-100 text-purple-700' },
-  Venue: { label: 'Venue', icon: MapPin, color: 'bg-green-100 text-green-700' },
-  Act: { label: 'Act', icon: Music, color: 'bg-pink-100 text-pink-700' },
-  Agency: { label: 'Agency', icon: Building2, color: 'bg-blue-100 text-blue-700' }
-};
 
 const ROLE_CONFIG: Record<UserRole, { color: string }> = {
   Admin: { color: 'bg-red-100 text-red-700 border-red-200' },
@@ -53,7 +40,8 @@ export default function OrganizationSelectionScreen({
   user,
   organizations,
   onSelectOrganization,
-  onCreateOrganization
+  onCreateOrganization,
+  onAdminViewAll
 }: OrganizationSelectionScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewState, setViewState] = useState<ViewState>('default');
@@ -363,6 +351,20 @@ export default function OrganizationSelectionScreen({
               })}
             </div>
           </>
+        )}
+
+        {/* Admin Section */}
+        {onAdminViewAll && (
+          <div className="mt-12 pt-8 border-t border-gray-200">
+            <Button
+              onClick={onAdminViewAll}
+              variant="outline"
+              className="w-full sm:w-auto"
+            >
+              <Building2 className="w-4 h-4 mr-2" />
+              Admin: View All Organizations
+            </Button>
+          </div>
         )}
       </div>
     </div>
