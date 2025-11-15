@@ -601,7 +601,7 @@ export default function CreateGigScreen({
             role: s.role,
             count: s.count,
             notes: s.notes || null,
-            assignments: s.assignments
+            assignments: (s.assignments || [])
               .filter(a => a.user_id && a.user_id.trim() !== '')
               .map(a => ({
                 id: isDbId(a.id) ? a.id : undefined, // Only send database IDs
@@ -660,7 +660,7 @@ export default function CreateGigScreen({
             role: s.role,
             count: s.count,
             notes: s.notes || null,
-            assignments: s.assignments
+            assignments: (s.assignments || [])
               .filter(a => a.user_id && a.user_id.trim() !== '')
               .map(a => ({
                 user_id: a.user_id,

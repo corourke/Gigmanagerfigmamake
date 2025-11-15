@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Input } from './ui/input';
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from './ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
@@ -21,14 +21,19 @@ export default function UserSelector({
   value = '',
   organizationIds,
 }: UserSelectorProps) {
-  const [searchQuery, setSearchQuery] = useState(value);
+  const [inputValue, setInputValue] = useState(value);
   const [isOpen, setIsOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Update input value when prop changes
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
   const handleSearch = async (query: string) => {
-    setSearchQuery(query);
+    setInputValue(query);
     
     if (!query.trim()) {
       setSearchResults([]);
@@ -51,8 +56,8 @@ export default function UserSelector({
 
   const handleSelectUser = (user: User) => {
     const fullName = `${user.first_name} ${user.last_name}`.trim();
+    setInputValue(fullName);
     onSelect(user);
-    setSearchQuery(fullName);
     setIsOpen(false);
   };
 
@@ -64,7 +69,7 @@ export default function UserSelector({
           <Input
             ref={inputRef}
             type="text"
-            value={searchQuery}
+            value={inputValue}
             onChange={(e) => handleSearch(e.target.value)}
             onFocus={() => setIsOpen(true)}
             placeholder={placeholder}
@@ -86,7 +91,7 @@ export default function UserSelector({
                 <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-sky-500" />
                 <p className="text-sm text-gray-600">Searching...</p>
               </div>
-            ) : searchQuery.trim() && searchResults.length > 0 ? (
+            ) : inputValue.trim() && searchResults.length > 0 ? (
               <CommandGroup heading={`Found ${searchResults.length} result${searchResults.length === 1 ? '' : 's'}`}>
                 {searchResults.map((user) => {
                   const fullName = `${user.first_name} ${user.last_name}`.trim();
@@ -110,7 +115,7 @@ export default function UserSelector({
                   );
                 })}
               </CommandGroup>
-            ) : searchQuery.trim() ? (
+            ) : inputValue.trim() ? (
               <CommandEmpty>
                 <div className="p-8 text-center">
                   <UserIcon className="h-8 w-8 mx-auto mb-2 text-gray-400" />
