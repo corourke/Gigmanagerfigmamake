@@ -1,3 +1,4 @@
+import React from 'react';
 import { LayoutDashboard, Calendar, Users, Package } from 'lucide-react';
 
 export type RouteType = 
@@ -30,7 +31,7 @@ interface NavigationMenuProps {
   onNavigateToAssets?: () => void;
 }
 
-export default function NavigationMenu({
+const NavigationMenu = React.memo(function NavigationMenu({
   currentRoute,
   onNavigateToDashboard,
   onNavigateToGigs,
@@ -93,4 +94,6 @@ export default function NavigationMenu({
       })}
     </nav>
   );
-}
+});
+
+export default NavigationMenu;

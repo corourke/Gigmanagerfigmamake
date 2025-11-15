@@ -681,6 +681,8 @@ export default function CreateGigScreen({
 
         // Save bids (organization-specific data)
         try {
+          const createdBidIds: string[] = [];
+          
           for (const bid of bids) {
             // Only save bids with complete data
             if (bid.date_given && bid.amount && bid.amount.trim() !== '') {
@@ -705,7 +707,8 @@ export default function CreateGigScreen({
               } else {
                 // Create new bid
                 console.log('Creating new bid:', bidData);
-                await createGigBid(bidData);
+                const createdBid = await createGigBid(bidData);
+                createdBidIds.push(createdBid.id);
               }
             }
           }
@@ -718,7 +721,11 @@ export default function CreateGigScreen({
             .eq('organization_id', organization.id);
           
           if (existingBids) {
-            const currentBidIds = bids.filter(b => isDbId(b.id)).map(b => b.id);
+            // Include both existing DB IDs and newly created IDs in the current bids list
+            const currentBidIds = [
+              ...bids.filter(b => isDbId(b.id)).map(b => b.id),
+              ...createdBidIds
+            ];
             const bidsToDelete = existingBids.filter(eb => !currentBidIds.includes(eb.id));
             for (const bidToDelete of bidsToDelete) {
               console.log('Deleting bid:', bidToDelete.id);

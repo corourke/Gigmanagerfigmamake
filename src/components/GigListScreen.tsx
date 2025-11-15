@@ -364,13 +364,22 @@ export default function GigListScreen({
               console.error('Error fetching new gig:', error);
             }
           } else if (payload.eventType === 'UPDATE') {
-            // Fetch the updated gig with relations
-            try {
-              const updatedGig = await api.getGig(payload.new.id);
-              setGigs(prev => prev.map(g => g.id === updatedGig.id ? updatedGig : g));
-            } catch (error) {
-              console.error('Error fetching updated gig:', error);
-            }
+            // For UPDATE, use payload data directly and preserve existing relations
+            // This avoids an unnecessary API call
+            setGigs(prev => prev.map(g => {
+              if (g.id === payload.new.id) {
+                // Update the gig with new data but preserve venue/act relations
+                return {
+                  ...g,
+                  ...payload.new,
+                  // Preserve existing relations (venue/act) since they don't change often
+                  // and would require a separate query to the gig_participants table
+                  venue: g.venue,
+                  act: g.act,
+                };
+              }
+              return g;
+            }));
           } else if (payload.eventType === 'DELETE') {
             setGigs(prev => prev.filter(g => g.id !== payload.old.id));
             toast.success('Gig deleted');

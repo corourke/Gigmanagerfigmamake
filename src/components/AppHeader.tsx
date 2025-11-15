@@ -15,6 +15,7 @@ import {
   LogOut,
   SwitchCamera,
 } from 'lucide-react';
+import React from 'react';
 import type { Organization, User, UserRole } from '../App';
 import NavigationMenu, { type RouteType } from './NavigationMenu';
 
@@ -38,7 +39,7 @@ const ROLE_CONFIG: Record<UserRole, { color: string }> = {
   Viewer: { color: 'bg-slate-100 text-slate-700 border-slate-200' }
 };
 
-export default function AppHeader({
+const AppHeader = React.memo(function AppHeader({
   organization,
   user,
   userRole,
@@ -131,4 +132,6 @@ export default function AppHeader({
       </div>
     </div>
   );
-}
+});
+
+export default AppHeader;
