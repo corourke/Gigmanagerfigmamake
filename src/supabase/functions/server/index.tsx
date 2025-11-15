@@ -480,6 +480,7 @@ Deno.serve(async (req) => {
         state,
         postal_code,
         country,
+        allowed_domains,
       } = body;
 
       // Validate required fields
@@ -497,7 +498,7 @@ Deno.serve(async (req) => {
           name,
           type,
           url,
-          phone: phone_number,
+          phone_number: phone_number,
           description,
           address_line1,
           address_line2,
@@ -505,6 +506,7 @@ Deno.serve(async (req) => {
           state,
           postal_code,
           country,
+          allowed_domains,
           updated_at: new Date().toISOString(),
         })
         .eq('id', orgId)

@@ -35,7 +35,7 @@ interface FormData {
   name: string;
   type: OrganizationType | '';
   url: string;
-  phone: string;
+  phone_number: string;
   description: string;
   address_line1: string;
   address_line2: string;
@@ -43,6 +43,7 @@ interface FormData {
   state: string;
   postal_code: string;
   country: string;
+  allowed_domains: string;
 }
 
 interface FormErrors {
@@ -153,7 +154,7 @@ export default function CreateOrganizationScreen({
     name: organization?.name || '',
     type: organization?.type || '',
     url: organization?.url || '',
-    phone: organization?.phone || '',
+    phone_number: organization?.phone_number || '',
     description: organization?.description || '',
     address_line1: organization?.address_line1 || '',
     address_line2: organization?.address_line2 || '',
@@ -161,6 +162,7 @@ export default function CreateOrganizationScreen({
     state: organization?.state || '',
     postal_code: organization?.postal_code || '',
     country: organization?.country || '',
+    allowed_domains: organization?.allowed_domains || '',
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
@@ -328,7 +330,7 @@ export default function CreateOrganizationScreen({
       ...formData,
       name: place.name,
       url: place.website || '',
-      phone: place.formatted_phone_number || '',
+      phone_number: place.formatted_phone_number || '',
       description: place.editorial_summary || '',
       address_line1: streetAddress,
       city: addressParts.locality || '',
@@ -346,7 +348,7 @@ export default function CreateOrganizationScreen({
       name: '',
       type: '',
       url: '',
-      phone: '',
+      phone_number: '',
       description: '',
       address_line1: '',
       address_line2: '',
@@ -354,6 +356,7 @@ export default function CreateOrganizationScreen({
       state: '',
       postal_code: '',
       country: '',
+      allowed_domains: '',
     });
   };
 
@@ -398,9 +401,9 @@ export default function CreateOrganizationScreen({
     }
 
     // Optional: Phone validation
-    if (formData.phone.trim()) {
+    if (formData.phone_number.trim()) {
       const phonePattern = /^[\d\s\-\+\(\)]+$/;
-      if (!phonePattern.test(formData.phone.trim())) {
+      if (!phonePattern.test(formData.phone_number.trim())) {
         newErrors.phone = 'Please enter a valid phone number';
       }
     }
@@ -427,7 +430,7 @@ export default function CreateOrganizationScreen({
           name: formData.name.trim(),
           type: formData.type as OrganizationType,
           url: formData.url.trim() || undefined,
-          phone: formData.phone.trim() || undefined,
+          phone_number: formData.phone_number.trim() || undefined,
           description: formData.description.trim() || undefined,
           address_line1: formData.address_line1.trim() || undefined,
           address_line2: formData.address_line2.trim() || undefined,
@@ -435,6 +438,7 @@ export default function CreateOrganizationScreen({
           state: formData.state.trim() || undefined,
           postal_code: formData.postal_code.trim() || undefined,
           country: formData.country.trim() || undefined,
+          allowed_domains: formData.allowed_domains.trim() || undefined,
           created_at: organization?.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
@@ -465,7 +469,7 @@ export default function CreateOrganizationScreen({
         name: formData.name.trim(),
         type: formData.type,
         url: formData.url.trim() || null,
-        phone_number: formData.phone.trim() || null,
+        phone_number: formData.phone_number.trim() || null,
         description: formData.description.trim() || null,
         address_line1: formData.address_line1.trim() || null,
         address_line2: formData.address_line2.trim() || null,
@@ -473,6 +477,7 @@ export default function CreateOrganizationScreen({
         state: formData.state.trim() || null,
         postal_code: formData.postal_code.trim() || null,
         country: formData.country.trim() || null,
+        allowed_domains: formData.allowed_domains.trim() || null,
       };
 
       let url = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4/organizations`;
@@ -764,8 +769,8 @@ export default function CreateOrganizationScreen({
                     id="phone"
                     type="tel"
                     placeholder="+1 (555) 123-4567"
-                    value={formData.phone}
-                    onChange={(e) => handleInputChange('phone', e.target.value)}
+                    value={formData.phone_number}
+                    onChange={(e) => handleInputChange('phone_number', e.target.value)}
                     className={errors.phone ? 'border-red-500' : ''}
                     disabled={isSubmitting}
                   />
@@ -795,6 +800,22 @@ export default function CreateOrganizationScreen({
                       {errors.url}
                     </p>
                   )}
+                </div>
+
+                {/* Allowed Domains */}
+                <div className="space-y-2">
+                  <Label htmlFor="allowed_domains">Allowed Email Domains</Label>
+                  <Input
+                    id="allowed_domains"
+                    type="text"
+                    placeholder="example.com, company.org"
+                    value={formData.allowed_domains}
+                    onChange={(e) => handleInputChange('allowed_domains', e.target.value)}
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-sm text-gray-500">
+                    Comma-separated list of email domains allowed to join this organization (e.g., example.com, company.org)
+                  </p>
                 </div>
 
                 {/* Description */}

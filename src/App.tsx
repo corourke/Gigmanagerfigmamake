@@ -34,7 +34,7 @@ export interface Organization {
   name: string;
   type: OrganizationType;
   url?: string;
-  phone?: string;
+  phone_number?: string;
   description?: string;
   notes?: string;
   address_line1?: string;
@@ -43,6 +43,7 @@ export interface Organization {
   state?: string;
   postal_code?: string;
   country?: string;
+  allowed_domains?: string;
   created_at: string;
   updated_at: string;
 }
