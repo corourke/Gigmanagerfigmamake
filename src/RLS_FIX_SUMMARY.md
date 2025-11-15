@@ -12,6 +12,7 @@ Disable RLS on tables with circular dependencies and handle access control at ap
 
 | Table | Why Disabled | Access Control Location |
 |-------|--------------|------------------------|
+| `users` | Cross-organization user searches for gig staffing | `searchUsers()` in `/utils/api.tsx` |
 | `organization_members` | Policies query same table | `getUserOrganizations()`, `searchUsers()` in `/utils/api.tsx` |
 | `gig_participants` | Policies query gigs → participants (circular) | `getGigsForOrganization()`, `getGig()`, `createGig()` |
 | `gig_staff_slots` | Policies query gigs → participants → slots | `createGig()`, `updateGig()` |
@@ -22,14 +23,13 @@ Disable RLS on tables with circular dependencies and handle access control at ap
 
 ## 📋 Tables with RLS ENABLED (Safe)
 
-✅ `users` - Own profile + shared org members  
 ✅ `organizations` - User's organizations  
 ✅ `staff_roles` - Public read-only  
 ✅ `gigs` - User's organization gigs  
 ✅ `gig_status_history` - Accessible gig history  
 ✅ `gig_bids` - Accessible gig bids  
 ✅ `org_annotations` - User's org annotations  
-✅ `assets` - User's org assets  
+✅ `assets` - User's org assets
 
 ---
 

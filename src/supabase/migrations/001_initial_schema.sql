@@ -223,14 +223,12 @@ CREATE TABLE assets (
 CREATE INDEX idx_assets_org_id ON assets(organization_id);
 CREATE INDEX idx_assets_category ON assets(category);
 
--- ============================================
--- ROW-LEVEL SECURITY POLICIES
--- ============================================
-
--- Enable RLS on all tables
+-- =============================================
+-- ENABLE/DISABLE ROW LEVEL SECURITY
+-- =============================================
 -- NOTE: Some tables have RLS DISABLED to prevent circular dependency recursion
 -- Those tables have access control handled at the application layer in /utils/api.tsx
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_members DISABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_roles ENABLE ROW LEVEL SECURITY;

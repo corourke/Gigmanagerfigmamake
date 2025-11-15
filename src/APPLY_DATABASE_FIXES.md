@@ -10,11 +10,12 @@ The code changes have been made, but the **database schema needs to be updated**
 
 The following tables have **circular dependency issues** in their RLS policies:
 
-1. ✅ `organization_members` - Policies query the same table they protect
-2. ✅ `gig_participants` - Policies query through gigs which queries participants (circular)
-3. ✅ `gig_staff_slots` - Policies query through gigs which queries participants (circular)
-4. ✅ `gig_staff_assignments` - Policies query through staff_slots (circular)
-5. ✅ `gig_kit_assignments` - Policies query through participants (circular)
+1. ✅ `users` - RLS policy restricts users to shared org members (prevents cross-org searches for gig staffing)
+2. ✅ `organization_members` - Policies query the same table they protect
+3. ✅ `gig_participants` - Policies query through gigs which queries participants (circular)
+4. ✅ `gig_staff_slots` - Policies query through gigs which queries participants (circular)
+5. ✅ `gig_staff_assignments` - Policies query through staff_slots (circular)
+6. ✅ `gig_kit_assignments` - Policies query through participants (circular)
 
 **Solution:** Disable RLS on these tables and handle access control at the application layer in `/utils/api.tsx`.
 
@@ -215,21 +216,21 @@ Even though RLS is disabled on these tables, security is **NOT compromised** bec
 ## 📊 **Tables Summary**
 
 ### **RLS DISABLED (Circular Dependencies Eliminated):**
-1. ✅ `organization_members` - Application filtering in `getUserOrganizations()`, `searchUsers()`
-2. ✅ `gig_participants` - Application filtering in `getGigsForOrganization()`, `getGig()`, `createGig()`
-3. ✅ `gig_staff_slots` - Application filtering in `createGig()`, `updateGig()`
-4. ✅ `gig_staff_assignments` - Application filtering in `createGig()`, `updateGig()`
-5. ✅ `gig_kit_assignments` - Application filtering in kit management functions
+1. ✅ `users` - Application filtering in `searchUsers()` (allows cross-org searches for gig staffing)
+2. ✅ `organization_members` - Application filtering in `getUserOrganizations()`, `searchUsers()`
+3. ✅ `gig_participants` - Application filtering in `getGigsForOrganization()`, `getGig()`, `createGig()`
+4. ✅ `gig_staff_slots` - Application filtering in `createGig()`, `updateGig()`
+5. ✅ `gig_staff_assignments` - Application filtering in `createGig()`, `updateGig()`
+6. ✅ `gig_kit_assignments` - Application filtering in kit management functions
 
 ### **RLS ENABLED (Safe, No Circular Dependencies):**
-1. ✅ `users` - Can view own profile + profiles in shared organizations
-2. ✅ `organizations` - Can view organizations user belongs to
-3. ✅ `staff_roles` - Public read-only
-4. ✅ `gigs` - Can view gigs from user's organizations
-5. ✅ `gig_status_history` - Can view history for accessible gigs
-6. ✅ `gig_bids` - Can view bids for accessible gigs
-7. ✅ `org_annotations` - Can view annotations from user's organizations
-8. ✅ `assets` - Can view assets from user's organizations
+1. ✅ `organizations` - Can view organizations user belongs to
+2. ✅ `staff_roles` - Public read-only
+3. ✅ `gigs` - Can view gigs from user's organizations
+4. ✅ `gig_status_history` - Can view history for accessible gigs
+5. ✅ `gig_bids` - Can view bids for accessible gigs
+6. ✅ `org_annotations` - Can view annotations from user's organizations
+7. ✅ `assets` - Can view assets from user's organizations
 
 ---
 

@@ -99,6 +99,7 @@ END $$;
 -- SUMMARY
 -- ============================================
 -- Tables with RLS DISABLED (circular dependency prevention):
+-- ✅ users - Access control in searchUsers() (allows cross-org searches for gig staffing)
 -- ✅ gigs - Access control in getGig(), createGig(), updateGig()
 -- ✅ organization_members - Access control in getUserOrganizations(), searchUsers()
 -- ✅ gig_participants - Access control in getGigsForOrganization(), getGig(), createGig()
@@ -107,7 +108,6 @@ END $$;
 -- ✅ gig_kit_assignments - Access control in kit management functions
 --
 -- Tables with RLS ENABLED (safe, no circular dependencies):
--- ✅ users
 -- ✅ organizations
 -- ✅ staff_roles
 -- ✅ gig_status_history

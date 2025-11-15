@@ -613,10 +613,6 @@ export default function CreateGigScreen({
               })),
           }));
 
-        console.log('Updating gig with data:', JSON.stringify(gigData, null, 2));
-        console.log('Staff slots before sending:', JSON.stringify(staffSlots, null, 2));
-        console.log('Mapped staff_slots:', JSON.stringify(gigData.staff_slots, null, 2));
-
         // Use API function instead of Edge Function
         if (!gigId) {
           throw new Error('Gig ID is required for update');
