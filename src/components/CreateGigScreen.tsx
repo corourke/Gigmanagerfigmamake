@@ -66,7 +66,7 @@ import MarkdownEditor from './MarkdownEditor';
 import type { User, Organization, OrganizationType, UserRole } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { projectId } from '../utils/supabase/info';
-import { getGig, updateGig, createGig, deleteGig } from '../utils/api';
+import { getGig, updateGig, createGig, deleteGig, createGigBid, updateGigBid, deleteGigBid } from '../utils/api';
 
 const supabase = createClient();
 
@@ -254,6 +254,17 @@ export default function CreateGigScreen({
   const [staffRoles, setStaffRoles] = useState<string[]>([]);
   const [isLoadingRoles, setIsLoadingRoles] = useState(false);
 
+  // Kit Assignments
+  const [kitAssignments, setKitAssignments] = useState<any[]>([]);
+  const [availableKits, setAvailableKits] = useState<any[]>([]);
+  const [showKitNotes, setShowKitNotes] = useState<string | null>(null);
+  const [currentKitNotes, setCurrentKitNotes] = useState('');
+
+  // Bids
+  const [bids, setBids] = useState<any[]>([]);
+  const [showBidNotes, setShowBidNotes] = useState<string | null>(null);
+  const [currentBidNotes, setCurrentBidNotes] = useState('');
+
   // Load staff roles from database
   useEffect(() => {
     loadStaffRoles();
@@ -358,6 +369,25 @@ export default function CreateGigScreen({
           };
         });
         setStaffSlots(loadedSlots);
+      }
+
+      // Load bids
+      const { data: bidsData } = await supabase
+        .from('gig_bids')
+        .select('*')
+        .eq('gig_id', gigId)
+        .eq('organization_id', organization.id)
+        .order('date_given', { ascending: false });
+
+      if (bidsData && bidsData.length > 0) {
+        const loadedBids = bidsData.map((b: any) => ({
+          id: b.id || Math.random().toString(36).substr(2, 9),
+          date_given: b.date_given || format(new Date(), 'yyyy-MM-dd'),
+          amount: b.amount ? b.amount.toString() : '',
+          result: b.result || '',
+          notes: b.notes || '',
+        }));
+        setBids(loadedBids);
       }
 
       toast.success('Gig loaded successfully');
@@ -500,7 +530,6 @@ export default function CreateGigScreen({
 
   // Staff Assignment Management
   const handleAddStaffAssignment = (slotId: string) => {
-    console.log('🔍 DEBUG - handleAddStaffAssignment called for slotId:', slotId);
     const newAssignment: StaffAssignmentData = {
       id: Math.random().toString(36).substr(2, 9),
       user_id: '',
@@ -513,13 +542,11 @@ export default function CreateGigScreen({
     setStaffSlots(staffSlots.map(slot => 
       slot.id === slotId ? { ...slot, assignments: [...slot.assignments, newAssignment] } : slot
     ));
-    console.log('🔍 DEBUG - New assignment added:', newAssignment);
   };
 
   const handleUpdateStaffAssignment = (slotId: string, assignmentId: string, field: keyof StaffAssignmentData, value: string) => {
-    console.log('🔍 DEBUG - handleUpdateStaffAssignment called:', { slotId, assignmentId, field, value });
-    setStaffSlots(prevSlots => {
-      const newSlots = prevSlots.map(slot => 
+    setStaffSlots(prevSlots => 
+      prevSlots.map(slot => 
         slot.id === slotId
           ? {
               ...slot,
@@ -528,10 +555,8 @@ export default function CreateGigScreen({
               )
             }
           : slot
-      );
-      console.log('🔍 DEBUG - handleUpdateStaffAssignment - NEW STATE:', JSON.stringify(newSlots, null, 2));
-      return newSlots;
-    });
+      )
+    );
   };
 
   const handleRemoveStaffAssignment = (slotId: string, assignmentId: string) => {
@@ -560,6 +585,44 @@ export default function CreateGigScreen({
       handleUpdateStaffAssignment(slotId, assignmentId, 'notes', currentAssignmentNotes);
       setShowAssignmentNotes(null);
       setCurrentAssignmentNotes('');
+    }
+  };
+
+  // Bid Management
+  const handleAddBid = () => {
+    const newBid = {
+      id: Math.random().toString(36).substr(2, 9),
+      date_given: format(new Date(), 'yyyy-MM-dd'),
+      amount: '',
+      result: '',
+      notes: '',
+    };
+    setBids([...bids, newBid]);
+  };
+
+  const handleUpdateBid = (id: string, field: string, value: string) => {
+    setBids(bids.map(b => 
+      b.id === id ? { ...b, [field]: value } : b
+    ));
+  };
+
+  const handleRemoveBid = (id: string) => {
+    setBids(bids.filter(b => b.id !== id));
+  };
+
+  const handleOpenBidNotes = (id: string) => {
+    const bid = bids.find(b => b.id === id);
+    if (bid) {
+      setCurrentBidNotes(bid.notes);
+      setShowBidNotes(id);
+    }
+  };
+
+  const handleSaveBidNotes = () => {
+    if (showBidNotes) {
+      handleUpdateBid(showBidNotes, 'notes', currentBidNotes);
+      setShowBidNotes(null);
+      setCurrentBidNotes('');
     }
   };
 
@@ -602,53 +665,70 @@ export default function CreateGigScreen({
             notes: p.notes || null,
           }));
 
-        console.log('🔍 DEBUG - UPDATE GIG - Raw staffSlots state before mapping:', JSON.stringify(staffSlots, null, 2));
-        console.log('🔍 DEBUG - UPDATE GIG - staffSlots length:', staffSlots.length);
-        staffSlots.forEach((slot, idx) => {
-          console.log(`🔍 DEBUG - UPDATE GIG - Raw Slot ${idx}:`, {
-            id: slot.id,
-            role: slot.role,
-            assignmentCount: slot.assignments?.length || 0,
-            assignments: slot.assignments
-          });
-        });
-
-        gigData.staff_slots = staffSlots
-          .filter(s => s.role && s.role.trim() !== '')
-          .map(s => ({
-            id: isDbId(s.id) ? s.id : undefined, // Only send database IDs
-            organization_id: s.organization_id || organization.id, // Include organization_id
-            role: s.role,
-            count: s.count,
-            notes: s.notes || null,
-            assignments: (s.assignments || [])
-              .filter(a => a.user_id && a.user_id.trim() !== '')
-              .map(a => ({
-                id: isDbId(a.id) ? a.id : undefined, // Only send database IDs
-                user_id: a.user_id,
-                status: a.status,
-                rate: a.compensation_type === 'rate' ? (a.amount ? parseFloat(a.amount) : null) : null,
-                fee: a.compensation_type === 'fee' ? (a.amount ? parseFloat(a.amount) : null) : null,
-                notes: a.notes || null,
-              })),
-          }));
-
-        console.log('🔍 DEBUG - UPDATE GIG - Staff slots being sent:', JSON.stringify(gigData.staff_slots, null, 2));
-        console.log('🔍 DEBUG - UPDATE GIG - Number of slots:', gigData.staff_slots.length);
-        gigData.staff_slots.forEach((slot, idx) => {
-          console.log(`🔍 DEBUG - UPDATE GIG - Slot ${idx}:`, {
-            role: slot.role,
-            count: slot.count,
-            assignmentCount: slot.assignments?.length || 0,
-            assignments: slot.assignments
-          });
-        });
+        // NOTE: We do NOT pass staff_slots to updateGig to avoid unnecessary database updates
+        // Staff slots and assignments are only updated during creation or when explicitly
+        // saved by the user through the Staff Assignments section. This follows the data
+        // handling guideline to only update values that have actually changed in the UI.
+        // 
+        // The updateGig API function checks if staff_slots === undefined, and if so, 
+        // it will NOT touch existing staff slots/assignments in the database.
 
         // Use API function instead of Edge Function
         if (!gigId) {
           throw new Error('Gig ID is required for update');
         }
         await updateGig(gigId, gigData);
+
+        // Save bids (organization-specific data)
+        try {
+          for (const bid of bids) {
+            // Only save bids with complete data
+            if (bid.date_given && bid.amount && bid.amount.trim() !== '') {
+              const bidData = {
+                gig_id: gigId,
+                organization_id: organization.id,
+                date_given: bid.date_given,
+                amount: parseFloat(bid.amount),
+                result: bid.result || null,
+                notes: bid.notes || null,
+              };
+
+              if (isDbId(bid.id)) {
+                // Update existing bid
+                console.log('Updating bid:', bid.id, bidData);
+                await updateGigBid(bid.id, {
+                  date_given: bidData.date_given,
+                  amount: bidData.amount,
+                  result: bidData.result,
+                  notes: bidData.notes,
+                });
+              } else {
+                // Create new bid
+                console.log('Creating new bid:', bidData);
+                await createGigBid(bidData);
+              }
+            }
+          }
+
+          // Delete removed bids (bids that were in database but not in current state)
+          const { data: existingBids } = await supabase
+            .from('gig_bids')
+            .select('id')
+            .eq('gig_id', gigId)
+            .eq('organization_id', organization.id);
+          
+          if (existingBids) {
+            const currentBidIds = bids.filter(b => isDbId(b.id)).map(b => b.id);
+            const bidsToDelete = existingBids.filter(eb => !currentBidIds.includes(eb.id));
+            for (const bidToDelete of bidsToDelete) {
+              console.log('Deleting bid:', bidToDelete.id);
+              await deleteGigBid(bidToDelete.id);
+            }
+          }
+        } catch (bidError: any) {
+          console.error('Error saving bids:', bidError);
+          toast.error('Failed to save bids: ' + (bidError.message || 'Unknown error'));
+        }
 
         toast.success('Gig updated successfully!');
         if (onGigUpdated) {
@@ -706,6 +786,34 @@ export default function CreateGigScreen({
 
         // Use API function instead of Edge Function
         const newGig = await createGig(gigData);
+
+        // Save bids (organization-specific data)
+        try {
+          for (const bid of bids) {
+            // Only save bids with complete data
+            if (bid.date_given && bid.amount && bid.amount.trim() !== '') {
+              console.log('Creating bid for new gig:', {
+                gig_id: newGig.id,
+                organization_id: organization.id,
+                date_given: bid.date_given,
+                amount: parseFloat(bid.amount),
+                result: bid.result || null,
+                notes: bid.notes || null,
+              });
+              await createGigBid({
+                gig_id: newGig.id,
+                organization_id: organization.id,
+                date_given: bid.date_given,
+                amount: parseFloat(bid.amount),
+                result: bid.result || null,
+                notes: bid.notes || null,
+              });
+            }
+          }
+        } catch (bidError: any) {
+          console.error('Error saving bids for new gig:', bidError);
+          toast.error('Failed to save bids: ' + (bidError.message || 'Unknown error'));
+        }
 
         toast.success('Gig created successfully!');
         onGigCreated(newGig.id);
@@ -1023,26 +1131,25 @@ export default function CreateGigScreen({
               </div>
             </Card>
 
-            {/* Additional Information - Private to Organization */}
+            {/* Private to Organization Note */}
+            <div className="flex items-start gap-2 mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-amber-900">
+                  <strong>Private to your organization:</strong> Staff assignments, bids, financial information, tags, and notes are only visible to members of your organization.
+                </p>
+              </div>
+            </div>
+
+            {/* Staff Assignments */}
             <Card className="p-6 sm:p-8 mb-6">
-              <div className="flex items-start gap-2 mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-amber-900">
-                    <strong>Private to your organization:</strong> Staff assignments, tags, notes, and financial information are only visible to members of your organization.
-                  </p>
-                </div>
+              <div className="flex items-center gap-2 mb-6">
+                <Users className="w-5 h-5 text-gray-600" />
+                <h3 className="text-gray-900">Staff Assignments</h3>
               </div>
 
-              <div className="space-y-6">
-                {/* Staff Assignments */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Users className="w-5 h-5 text-gray-600" />
-                    <Label>Staff Assignments</Label>
-                  </div>
-
-                  <div className="space-y-4">
+              <div className="space-y-4">
+                <div className="space-y-4">
                   {staffSlots.map((slot) => (
                     <div key={slot.id} className="border border-gray-200 rounded-lg overflow-hidden">
                       {/* Slot Header */}
@@ -1206,27 +1313,115 @@ export default function CreateGigScreen({
                     </div>
                   ))}
                   
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddStaffSlot}
-                    disabled={isSubmitting}
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Staff Slot
-                  </Button>
-                  </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddStaffSlot}
+                  disabled={isSubmitting}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Staff Slot
+                </Button>
                 </div>
+              </div>
+            </Card>
+
+            {/* Bids & Financial Information */}
+            <Card className="p-6 sm:p-8 mb-6">
+              <div className="flex items-center gap-2 mb-6">
+                <DollarSign className="w-5 h-5 text-gray-600" />
+                <h3 className="text-gray-900">Bids & Financial Information</h3>
+              </div>
+
+              <div className="space-y-6">
+                {/* Bids */}
                 <div className="space-y-2">
-                  <Label htmlFor="tags">Tags</Label>
-                  <TagsInput
-                    value={formValues.tags}
-                    onChange={(tags) => handleInputChange('tags', tags)}
-                    suggestions={SUGGESTED_TAGS}
-                    placeholder="Add tags to categorize this gig..."
-                    disabled={isSubmitting}
-                  />
+                  <Label>Bids</Label>
+                  <div className="space-y-4">
+                    {bids.map((bid) => (
+                      <div key={bid.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                        {/* Bid Header */}
+                        <div className="bg-gray-100 px-4 py-3 flex items-center justify-between">
+                          <div className="flex items-center gap-4 flex-1">
+                            <Label className="text-xs text-gray-600">Date Given:</Label>
+                            <Input
+                              type="date"
+                              value={bid.date_given}
+                              onChange={(e) => handleUpdateBid(bid.id, 'date_given', e.target.value)}
+                              disabled={isSubmitting}
+                              className="w-32 bg-white"
+                            />
+                            <Label className="text-xs text-gray-600">Amount:</Label>
+                            <div className="relative w-24">
+                              <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
+                                $
+                              </span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={bid.amount}
+                                onChange={(e) => handleUpdateBid(bid.id, 'amount', e.target.value)}
+                                placeholder="0.00"
+                                disabled={isSubmitting}
+                                className="pl-5 bg-white"
+                              />
+                            </div>
+                            <Label className="text-xs text-gray-600">Result:</Label>
+                            <Select
+                              value={bid.result}
+                              onValueChange={(value) => handleUpdateBid(bid.id, 'result', value)}
+                              disabled={isSubmitting}
+                            >
+                              <SelectTrigger className="w-32 bg-white">
+                                <SelectValue placeholder="Select result" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Accepted">Accepted</SelectItem>
+                                <SelectItem value="Rejected">Rejected</SelectItem>
+                                <SelectItem value="Pending">Pending</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenBidNotes(bid.id)}
+                              disabled={isSubmitting}
+                            >
+                              <FileText className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveBid(bid.id)}
+                            disabled={isSubmitting}
+                            className="text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {bids.length === 0 && (
+                      <p className="text-sm text-gray-500">No bids yet</p>
+                    )}
+                    
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddBid}
+                      disabled={isSubmitting}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Bid
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -1253,6 +1448,27 @@ export default function CreateGigScreen({
                       {errors.amount_paid}
                     </p>
                   )}
+                </div>
+              </div>
+            </Card>
+
+            {/* Tags & Notes */}
+            <Card className="p-6 sm:p-8 mb-6">
+              <div className="flex items-center gap-2 mb-6">
+                <Tag className="w-5 h-5 text-gray-600" />
+                <h3 className="text-gray-900">Tags & Notes</h3>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="tags">Tags</Label>
+                  <TagsInput
+                    value={formValues.tags}
+                    onChange={(tags) => handleInputChange('tags', tags)}
+                    suggestions={SUGGESTED_TAGS}
+                    placeholder="Add tags to categorize this gig..."
+                    disabled={isSubmitting}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -1405,6 +1621,31 @@ export default function CreateGigScreen({
               Cancel
             </Button>
             <Button onClick={handleSaveAssignmentNotes}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!showBidNotes} onOpenChange={() => setShowBidNotes(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bid Notes</DialogTitle>
+            <DialogDescription>
+              Add notes for this bid
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={currentBidNotes}
+            onChange={(e) => setCurrentBidNotes(e.target.value)}
+            placeholder="Enter notes..."
+            rows={4}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBidNotes(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveBidNotes}>
               Save
             </Button>
           </DialogFooter>

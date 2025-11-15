@@ -957,7 +957,7 @@ export default function GigListScreen({
                             <div className="space-y-1">
                               <Input
                                 ref={inputRef}
-                                value={editValue}
+                                value={editValue || ''}
                                 onChange={(e) => setEditValue(e.target.value)}
                                 onBlur={() => saveEdit(gig.id, 'title', editValue)}
                                 onKeyDown={(e) => handleKeyDown(e, gig.id, 'title')}

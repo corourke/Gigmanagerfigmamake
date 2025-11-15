@@ -714,7 +714,7 @@ export async function updateGig(gigId: string, gigData: {
   // Get the primary organization ID for staff slots (use first org user is admin/manager of)
   const primary_organization_id = userMemberships.find(m => m.role === 'Admin' || m.role === 'Manager')?.organization_id || userMemberships[0]?.organization_id;
 
-  const { participants = [], staff_slots = [], ...restGigData } = gigData;
+  const { participants, staff_slots, ...restGigData } = gigData;
 
   // Update gig basic info
   const { error: updateError } = await supabase
@@ -731,8 +731,8 @@ export async function updateGig(gigId: string, gigData: {
     throw updateError;
   }
 
-  // Update participants
-  if (participants && participants.length > 0) {
+  // Only update participants if explicitly provided
+  if (participants !== undefined && Array.isArray(participants)) {
     // Get existing participants
     const { data: existingParticipants } = await supabase
       .from('gig_participants')
@@ -777,8 +777,8 @@ export async function updateGig(gigId: string, gigData: {
     }
   }
 
-  // Update staff slots and assignments
-  if (staff_slots && staff_slots.length > 0) {
+  // Only update staff slots if explicitly provided (undefined means don't touch them)
+  if (staff_slots !== undefined && Array.isArray(staff_slots)) {
     console.log('🔍 DEBUG - API updateGig - Processing staff_slots:', JSON.stringify(staff_slots, null, 2));
     
     // Get existing staff slots
@@ -941,17 +941,16 @@ export async function updateGig(gigId: string, gigData: {
             console.log('🔍 DEBUG - API updateGig - Skipping assignment (no user_id)');
           }
         }
+      } else {
+        // Delete all assignments for this slot if none provided
+        await supabase
+          .from('gig_staff_assignments')
+          .delete()
+          .eq('slot_id', slotId);
       }
-      // NOTE: Don't delete assignments if slot.assignments is empty array
-      // Empty array means no complete assignments to send, not that we want to delete all
     }
-  } else {
-    // No slots in incoming data, delete all existing slots (cascades to assignments)
-    await supabase
-      .from('gig_staff_slots')
-      .delete()
-      .eq('gig_id', gigId);
   }
+  // NOTE: If staff_slots is undefined, we don't touch existing staff slots at all
 
   // Fetch updated gig with participants
   const updatedGig = await getGig(gigId);
@@ -967,6 +966,194 @@ export async function deleteGig(gigId: string) {
   if (error) {
     console.error('Error deleting gig:', error);
     throw error;
+  }
+
+  return { success: true };
+}
+
+// ============================================
+// GIG STAFF SLOTS & ASSIGNMENTS MANAGEMENT
+// ============================================
+// Separate functions for managing staff slots and assignments
+// to avoid unnecessary database updates when only gig metadata changes
+
+export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
+  id?: string;
+  organization_id: string;
+  role: string;
+  count?: number;
+  notes?: string | null;
+  assignments?: Array<{
+    id?: string;
+    user_id: string;
+    status?: string;
+    rate?: number | null;
+    fee?: number | null;
+    notes?: string | null;
+  }>;
+}>) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  // Verify user has access to this gig
+  const { data: gigParticipants } = await supabase
+    .from('gig_participants')
+    .select('organization_id')
+    .eq('gig_id', gigId);
+
+  if (!gigParticipants || gigParticipants.length === 0) {
+    throw new Error('Access denied - no participants found');
+  }
+
+  const orgIds = gigParticipants.map(gp => gp.organization_id);
+  
+  // Check if user is member of any participating organization with Admin or Manager role
+  const { data: userMemberships } = await supabase
+    .from('organization_members')
+    .select('organization_id, role')
+    .eq('user_id', user.id)
+    .in('organization_id', orgIds);
+
+  if (!userMemberships || userMemberships.length === 0) {
+    throw new Error('Access denied - not a member of participating organizations');
+  }
+
+  const hasAdminOrManager = userMemberships.some(m => m.role === 'Admin' || m.role === 'Manager');
+  if (!hasAdminOrManager) {
+    throw new Error('Access denied - only Admins and Managers can update staff slots');
+  }
+
+  // Get existing staff slots
+  const { data: existingSlots } = await supabase
+    .from('gig_staff_slots')
+    .select('id')
+    .eq('gig_id', gigId);
+
+  const existingSlotIds = existingSlots?.map(s => s.id) || [];
+  const incomingSlotIds = staff_slots.filter(s => s.id).map(s => s.id!);
+
+  // Delete slots that are no longer in the list (cascades to assignments)
+  const slotIdsToDelete = existingSlotIds.filter(id => !incomingSlotIds.includes(id));
+  if (slotIdsToDelete.length > 0) {
+    await supabase
+      .from('gig_staff_slots')
+      .delete()
+      .in('id', slotIdsToDelete);
+  }
+
+  // Update or insert staff slots
+  for (const slot of staff_slots) {
+    // Get or create staff role
+    let staffRoleId: string | null = null;
+    
+    const { data: existingRole } = await supabase
+      .from('staff_roles')
+      .select('id')
+      .eq('name', slot.role)
+      .maybeSingle();
+
+    if (existingRole?.id) {
+      staffRoleId = existingRole.id;
+    } else {
+      const { data: newRole } = await supabase
+        .from('staff_roles')
+        .insert({ name: slot.role })
+        .select('id')
+        .single();
+      
+      staffRoleId = newRole?.id || null;
+    }
+
+    if (!staffRoleId) continue;
+
+    let slotId = slot.id;
+
+    if (slot.id && existingSlotIds.includes(slot.id)) {
+      // Update existing slot
+      await supabase
+        .from('gig_staff_slots')
+        .update({
+          staff_role_id: staffRoleId,
+          organization_id: slot.organization_id,
+          required_count: slot.count || 1,
+          notes: slot.notes || null,
+        })
+        .eq('id', slot.id);
+    } else if (slot.role) {
+      // Insert new slot
+      const { data: newSlot } = await supabase
+        .from('gig_staff_slots')
+        .insert({
+          gig_id: gigId,
+          organization_id: slot.organization_id,
+          staff_role_id: staffRoleId,
+          required_count: slot.count || 1,
+          notes: slot.notes || null,
+        })
+        .select('id')
+        .single();
+      
+      slotId = newSlot?.id;
+    }
+
+    if (!slotId) continue;
+
+    // Handle assignments for this slot
+    if (slot.assignments && slot.assignments.length > 0) {
+      // Get existing assignments for this slot
+      const { data: existingAssignments } = await supabase
+        .from('gig_staff_assignments')
+        .select('id')
+        .eq('slot_id', slotId);
+
+      const existingAssignmentIds = existingAssignments?.map(a => a.id) || [];
+      const incomingAssignmentIds = slot.assignments.filter(a => a.id).map(a => a.id!);
+
+      // Delete assignments that are no longer in the list
+      const assignmentIdsToDelete = existingAssignmentIds.filter(id => !incomingAssignmentIds.includes(id));
+      if (assignmentIdsToDelete.length > 0) {
+        await supabase
+          .from('gig_staff_assignments')
+          .delete()
+          .in('id', assignmentIdsToDelete);
+      }
+
+      // Update or insert assignments
+      for (const assignment of slot.assignments) {
+        if (assignment.id && existingAssignmentIds.includes(assignment.id)) {
+          // Update existing assignment
+          await supabase
+            .from('gig_staff_assignments')
+            .update({
+              user_id: assignment.user_id,
+              status: assignment.status || 'Requested',
+              rate: assignment.rate || null,
+              fee: assignment.fee || null,
+              notes: assignment.notes || null,
+            })
+            .eq('id', assignment.id);
+        } else if (assignment.user_id) {
+          // Insert new assignment
+          await supabase
+            .from('gig_staff_assignments')
+            .insert({
+              slot_id: slotId,
+              user_id: assignment.user_id,
+              status: assignment.status || 'Requested',
+              rate: assignment.rate || null,
+              fee: assignment.fee || null,
+              notes: assignment.notes || null,
+            });
+        }
+      }
+    } else {
+      // Delete all assignments for this slot if none provided
+      await supabase
+        .from('gig_staff_assignments')
+        .delete()
+        .eq('slot_id', slotId);
+    }
   }
 
   return { success: true };
@@ -1444,13 +1631,17 @@ export async function removeKitFromGig(assignmentId: string) {
   return { success: true };
 }
 
-export async function getGigKits(gigId: string) {
-  const { data, error } = await supabase
+export async function getGigKits(gigId: string, organizationId?: string) {
+  let query = supabase
     .from('gig_kit_assignments')
     .select(`
       *,
       kit:kits(
-        *,
+        id,
+        name,
+        category,
+        tag_number,
+        rental_value,
         kit_assets(
           quantity,
           notes,
@@ -1459,6 +1650,12 @@ export async function getGigKits(gigId: string) {
       )
     `)
     .eq('gig_id', gigId);
+
+  if (organizationId) {
+    query = query.eq('organization_id', organizationId);
+  }
+
+  const { data, error } = await query.order('assigned_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching gig kits:', error);
@@ -1536,4 +1733,91 @@ export async function checkKitConflicts(kitId: string, gigId: string, startTime:
   }
 
   return { conflicts };
+}
+
+// ===== Gig Bids Management =====
+
+export async function getGigBids(gigId: string, organizationId?: string) {
+  let query = supabase
+    .from('gig_bids')
+    .select('*')
+    .eq('gig_id', gigId)
+    .order('date_given', { ascending: false });
+
+  if (organizationId) {
+    query = query.eq('organization_id', organizationId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching gig bids:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function createGigBid(bidData: {
+  gig_id: string;
+  organization_id: string;
+  amount: number;
+  date_given: string;
+  result?: string;
+  notes?: string;
+}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
+
+  const { data, error } = await supabase
+    .from('gig_bids')
+    .insert({
+      ...bidData,
+      created_by: user.id,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating bid:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function updateGigBid(bidId: string, bidData: {
+  amount?: number;
+  date_given?: string;
+  result?: string;
+  notes?: string;
+}) {
+  const { data, error } = await supabase
+    .from('gig_bids')
+    .update(bidData)
+    .eq('id', bidId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating bid:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function deleteGigBid(bidId: string) {
+  const { error } = await supabase
+    .from('gig_bids')
+    .delete()
+    .eq('id', bidId);
+
+  if (error) {
+    console.error('Error deleting bid:', error);
+    throw error;
+  }
+
+  return { success: true };
 }

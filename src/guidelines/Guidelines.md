@@ -28,5 +28,9 @@ Migration workflow:
 * Refactor code as you go to keep code clean.
 * Keep file sizes small and put helper functions and components in their own files.
 
---------------
+### Data handling guidelines
 
+* When updating data in the database through a user edit action (whether on a form, or inline editing
+  in a table) ensure that we ONLY update database columns (including rows in related tables) for 
+  values that have been changed in the UI. We should not make changes to column values that have not 
+  changed to avoid triggering change logic in the back-end. 

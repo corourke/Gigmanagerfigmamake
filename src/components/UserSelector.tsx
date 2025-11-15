@@ -53,14 +53,10 @@ export default function UserSelector({
   };
 
   const handleSelectUser = (user: User) => {
-    console.log('🔍 DEBUG - UserSelector - handleSelectUser called with user:', user);
-    const fullName = `${user.first_name} ${user.last_name}`.trim();
-    setInputValue(fullName);
-    setIsOpen(false);
-    setSearchResults([]);
-    console.log('🔍 DEBUG - UserSelector - Calling onSelect callback');
     onSelect(user);
-    console.log('🔍 DEBUG - UserSelector - onSelect callback completed');
+    setIsOpen(false);
+    setInputValue('');
+    setSearchResults([]);
   };
 
   return (
@@ -104,7 +100,6 @@ export default function UserSelector({
                     <CommandItem
                       key={user.id}
                       onMouseDown={(e) => {
-                        console.log('🔍 DEBUG - UserSelector - CommandItem mousedown for user:', user.id);
                         e.preventDefault();
                         e.stopPropagation();
                         handleSelectUser(user);
