@@ -80,22 +80,29 @@ export async function updateUserProfile(userId: string, updates: {
   return data;
 }
 
-export async function searchUsers(search?: string) {
+export async function searchUsers(search?: string, organizationIds?: string[]) {
   // Get current authenticated user
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
 
-  // Get organizations current user belongs to
-  const { data: userOrgs } = await supabase
-    .from('organization_members')
-    .select('organization_id')
-    .eq('user_id', user.id);
+  let orgIds: string[] = [];
 
-  const orgIds = userOrgs?.map(o => o.organization_id) || [];
+  if (organizationIds && organizationIds.length > 0) {
+    // Use provided organization IDs (e.g., from gig participants)
+    orgIds = organizationIds;
+  } else {
+    // Default: Get organizations current user belongs to
+    const { data: userOrgs } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', user.id);
+
+    orgIds = userOrgs?.map(o => o.organization_id) || [];
+  }
   
   if (orgIds.length === 0) {
-    return []; // User doesn't belong to any organizations
+    return []; // No organizations to search within
   }
 
   // Get all users who are members of these organizations
@@ -110,7 +117,7 @@ export async function searchUsers(search?: string) {
     return [];
   }
 
-  // Only search users in the same organizations
+  // Only search users in the specified organizations
   let query = supabase
     .from('users')
     .select('*')
@@ -704,6 +711,9 @@ export async function updateGig(gigId: string, gigData: {
     throw new Error('Access denied - only Admins and Managers can update gigs');
   }
 
+  // Get the primary organization ID for staff slots (use first org user is admin/manager of)
+  const primary_organization_id = userMemberships.find(m => m.role === 'Admin' || m.role === 'Manager')?.organization_id || userMemberships[0]?.organization_id;
+
   const { participants = [], staff_slots = [], ...restGigData } = gigData;
 
   // Update gig basic info
@@ -826,10 +836,12 @@ export async function updateGig(gigId: string, gigData: {
           .eq('id', slot.id);
       } else if (slot.role) {
         // Insert new slot
+        const slotOrgId = (slot as any).organization_id || primary_organization_id;
         const { data: newSlot } = await supabase
           .from('gig_staff_slots')
           .insert({
             gig_id: gigId,
+            organization_id: slotOrgId,
             staff_role_id: staffRoleId,
             required_count: slot.count || 1,
             notes: slot.notes || null,
@@ -890,13 +902,9 @@ export async function updateGig(gigId: string, gigData: {
               });
           }
         }
-      } else if (slotId) {
-        // No assignments in incoming data, delete all existing assignments for this slot
-        await supabase
-          .from('gig_staff_assignments')
-          .delete()
-          .eq('slot_id', slotId); // Fixed: column name is slot_id
       }
+      // NOTE: Don't delete assignments if slot.assignments is empty array
+      // Empty array means no complete assignments to send, not that we want to delete all
     }
   } else {
     // No slots in incoming data, delete all existing slots (cascades to assignments)

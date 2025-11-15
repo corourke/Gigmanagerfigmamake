@@ -131,6 +131,7 @@ interface ParticipantData {
 
 interface StaffSlotData {
   id: string;
+  organization_id?: string;
   role: string;
   count: number;
   notes: string;
@@ -349,6 +350,7 @@ export default function CreateGigScreen({
 
           return {
             id: s.id || Math.random().toString(36).substr(2, 9), // Use database ID
+            organization_id: s.organization_id,
             role: s.staff_role?.name || '',
             count: s.required_count || 1,
             notes: s.notes || '',
@@ -595,6 +597,7 @@ export default function CreateGigScreen({
           .filter(s => s.role && s.role.trim() !== '')
           .map(s => ({
             id: isDbId(s.id) ? s.id : undefined, // Only send database IDs
+            organization_id: s.organization_id || organization.id, // Include organization_id
             role: s.role,
             count: s.count,
             notes: s.notes || null,
@@ -611,6 +614,8 @@ export default function CreateGigScreen({
           }));
 
         console.log('Updating gig with data:', JSON.stringify(gigData, null, 2));
+        console.log('Staff slots before sending:', JSON.stringify(staffSlots, null, 2));
+        console.log('Mapped staff_slots:', JSON.stringify(gigData.staff_slots, null, 2));
 
         // Use API function instead of Edge Function
         if (!gigId) {
@@ -655,6 +660,7 @@ export default function CreateGigScreen({
         gigData.staff_slots = staffSlots
           .filter(s => s.role && s.role.trim() !== '')
           .map(s => ({
+            organization_id: organization.id, // Include organization_id
             role: s.role,
             count: s.count,
             notes: s.notes || null,
@@ -990,16 +996,26 @@ export default function CreateGigScreen({
               </div>
             </Card>
 
-            {/* Staff Assignments */}
+            {/* Additional Information - Private to Organization */}
             <Card className="p-6 sm:p-8 mb-6">
-              <div className="flex items-center gap-2 mb-6">
-                <Users className="w-5 h-5 text-gray-600" />
-                <h3 className="text-gray-900">Staff Assignments</h3>
+              <div className="flex items-start gap-2 mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-amber-900">
+                    <strong>Private to your organization:</strong> Staff assignments, tags, notes, and financial information are only visible to members of your organization.
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-6">
-                {/* Staff Assignments - Hierarchical Display */}
-                <div className="space-y-4">
+                {/* Staff Assignments */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Users className="w-5 h-5 text-gray-600" />
+                    <Label>Staff Assignments</Label>
+                  </div>
+
+                  <div className="space-y-4">
                   {staffSlots.map((slot) => (
                     <div key={slot.id} className="border border-gray-200 rounded-lg overflow-hidden">
                       {/* Slot Header */}
@@ -1080,6 +1096,7 @@ export default function CreateGigScreen({
                                     placeholder="Search for user..."
                                     disabled={isSubmitting}
                                     value={assignment.user_name}
+                                    organizationIds={participants.map(p => p.organization_id).filter(id => id && id.trim() !== '')}
                                   />
                                 </div>
                                 <Select
@@ -1172,22 +1189,8 @@ export default function CreateGigScreen({
                     <Plus className="w-4 h-4 mr-1" />
                     Add Staff Slot
                   </Button>
+                  </div>
                 </div>
-              </div>
-            </Card>
-
-            {/* Additional Information */}
-            <Card className="p-6 sm:p-8 mb-6">
-              <div className="flex items-start gap-2 mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-amber-900">
-                    <strong>Private to your organization:</strong> Tags, notes, and financial information are only visible to members of your organization.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="tags">Tags</Label>
                   <TagsInput

@@ -11,6 +11,7 @@ interface UserSelectorProps {
   placeholder?: string;
   disabled?: boolean;
   value?: string;
+  organizationIds?: string[]; // Optional: search within specific organizations
 }
 
 export default function UserSelector({
@@ -18,6 +19,7 @@ export default function UserSelector({
   placeholder = 'Search for user...',
   disabled = false,
   value = '',
+  organizationIds,
 }: UserSelectorProps) {
   const [searchQuery, setSearchQuery] = useState(value);
   const [isOpen, setIsOpen] = useState(false);
@@ -36,8 +38,8 @@ export default function UserSelector({
     setIsSearching(true);
 
     try {
-      // Use API function instead of Edge Function
-      const users = await searchUsers(query);
+      // Use API function with optional organization IDs filter
+      const users = await searchUsers(query, organizationIds);
       setSearchResults(users || []);
     } catch (error) {
       console.error('Error searching users:', error);
