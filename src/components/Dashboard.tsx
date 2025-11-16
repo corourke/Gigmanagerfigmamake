@@ -25,6 +25,7 @@ interface DashboardProps {
   onNavigateToTeam?: () => void;
   onNavigateToAssets?: () => void;
   onNavigateToKits?: () => void;
+  onEditProfile?: () => void;
 }
 
 interface DashboardStats {
@@ -72,7 +73,8 @@ export default function Dashboard({
   onNavigateToDashboard,
   onNavigateToTeam,
   onNavigateToAssets,
-  onNavigateToKits
+  onNavigateToKits,
+  onEditProfile,
 }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,6 +168,7 @@ export default function Dashboard({
         onNavigateToTeam={onNavigateToTeam}
         onNavigateToAssets={onNavigateToAssets}
         onSwitchOrganization={onBackToSelection}
+        onEditProfile={onEditProfile}
         onLogout={onLogout}
       />
 

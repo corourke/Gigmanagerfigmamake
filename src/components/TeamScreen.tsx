@@ -59,9 +59,11 @@ import {
   addExistingUserToOrganization,
   inviteUserToOrganization,
   getOrganizationInvitations,
-  cancelInvitation
+  cancelInvitation,
+  getStaffRoles
 } from '../utils/api';
 import { format } from 'date-fns';
+import UserProfileForm, { UserProfileFormData } from './UserProfileForm';
 
 interface TeamScreenProps {
   organization: Organization;
@@ -72,18 +74,28 @@ interface TeamScreenProps {
   onNavigateToTeam?: () => void;
   onNavigateToAssets?: () => void;
   onSwitchOrganization: () => void;
+  onEditProfile?: () => void;
   onLogout: () => void;
 }
 
 interface OrganizationMember {
   id: string;
   role: string;
+  default_staff_role_id?: string;
   created_at: string;
   user: {
     id: string;
     first_name: string;
     last_name: string;
     email: string;
+    phone?: string;
+    avatar_url?: string;
+    address_line1?: string;
+    address_line2?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
     last_sign_in_at?: string | null;
   };
 }
@@ -110,6 +122,7 @@ export default function TeamScreen({
   onNavigateToTeam,
   onNavigateToAssets,
   onSwitchOrganization,
+  onEditProfile,
   onLogout,
 }: TeamScreenProps) {
   const [members, setMembers] = useState<OrganizationMember[]>([]);
@@ -134,12 +147,24 @@ export default function TeamScreen({
   const [inviteRole, setInviteRole] = useState<UserRole>('Staff');
   
   // Edit member form
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<UserProfileFormData>({
     first_name: '',
     last_name: '',
     email: '',
+    phone: '',
+    avatar_url: '',
+    address_line1: '',
+    address_line2: '',
+    city: '',
+    state: '',
+    postal_code: '',
+    country: '',
     role: 'Staff' as UserRole,
+    default_staff_role_id: '',
   });
+
+  // Staff roles
+  const [staffRoles, setStaffRoles] = useState<Array<{ id: string; name: string }>>([]);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
@@ -165,11 +190,13 @@ export default function TeamScreen({
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [membersData, invitationsData] = await Promise.all([
+      const [membersData, invitationsData, staffRolesData] = await Promise.all([
         getOrganizationMembersWithAuth(organization.id),
         getOrganizationInvitations(organization.id),
+        getStaffRoles(),
       ]);
       setMembers(membersData);
+      setStaffRoles(staffRolesData);
       // Filter to only pending invitations, and handle empty array gracefully
       if (Array.isArray(invitationsData)) {
         setInvitations(invitationsData.filter((inv: Invitation) => inv.status === 'pending'));
@@ -321,7 +348,16 @@ export default function TeamScreen({
       first_name: member.user.first_name,
       last_name: member.user.last_name,
       email: member.user.email,
+      phone: member.user.phone || '',
+      avatar_url: member.user.avatar_url || '',
+      address_line1: member.user.address_line1 || '',
+      address_line2: member.user.address_line2 || '',
+      city: member.user.city || '',
+      state: member.user.state || '',
+      postal_code: member.user.postal_code || '',
+      country: member.user.country || '',
       role: member.role as UserRole,
+      default_staff_role_id: member.default_staff_role_id || '',
     });
     setShowEditDialog(true);
   };
@@ -360,6 +396,7 @@ export default function TeamScreen({
         onNavigateToTeam={onNavigateToTeam}
         onNavigateToAssets={onNavigateToAssets}
         onSwitchOrganization={onSwitchOrganization}
+        onEditProfile={onEditProfile}
         onLogout={onLogout}
       />
 
@@ -802,7 +839,7 @@ export default function TeamScreen({
 
       {/* Edit Member Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Team Member</DialogTitle>
             <DialogDescription>
@@ -810,82 +847,16 @@ export default function TeamScreen({
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit_first_name">First Name *</Label>
-                <Input
-                  id="edit_first_name"
-                  value={editForm.first_name}
-                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
-                  placeholder="John"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit_last_name">Last Name *</Label>
-                <Input
-                  id="edit_last_name"
-                  value={editForm.last_name}
-                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
-                  placeholder="Doe"
-                />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="edit_email">Email Address *</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  id="edit_email"
-                  type="email"
-                  placeholder="john@example.com"
-                  value={editForm.email}
-                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="edit_role">Role *</Label>
-              <Select 
-                value={editForm.role} 
-                onValueChange={(value) => setEditForm({ ...editForm, role: value as UserRole })}
-              >
-                <SelectTrigger id="edit_role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">
-                    <div className="flex items-center gap-2">
-                      <Crown className="w-4 h-4 text-amber-600" />
-                      Admin - Full access
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Manager">
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-blue-600" />
-                      Manager - Can manage gigs and team
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Staff">
-                    <div className="flex items-center gap-2">
-                      <UserIcon className="w-4 h-4 text-gray-600" />
-                      Staff - Can be assigned to gigs
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Viewer">
-                    <div className="flex items-center gap-2">
-                      <UserIcon className="w-4 h-4 text-gray-500" />
-                      Viewer - Read-only access
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <UserProfileForm
+            formData={editForm}
+            onChange={(field, value) => setEditForm({ ...editForm, [field]: value })}
+            disabled={isSubmitting}
+            emailReadOnly={true}
+            showRole={true}
+            showDefaultStaffRole={true}
+            staffRoles={staffRoles}
+            requiredFields={['first_name', 'last_name', 'email']}
+          />
           
           <DialogFooter>
             <Button

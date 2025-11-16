@@ -713,7 +713,15 @@ Deno.serve(async (req) => {
             id,
             first_name,
             last_name,
-            email
+            email,
+            phone,
+            avatar_url,
+            address_line1,
+            address_line2,
+            city,
+            state,
+            postal_code,
+            country
           )
         `)
         .eq('organization_id', orgId)

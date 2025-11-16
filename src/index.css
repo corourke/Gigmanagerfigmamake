@@ -902,6 +902,10 @@
     max-height: 80vh;
   }
 
+  .max-h-\[90vh\] {
+    max-height: 90vh;
+  }
+
   .max-h-\[120px\] {
     max-height: 120px;
   }

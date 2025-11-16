@@ -539,13 +539,38 @@ export async function cancelInvitation(invitationId: string) {
   return { success: true };
 }
 
+// ===== Staff Roles Management =====
+
+export async function getStaffRoles() {
+  const { data, error } = await supabase
+    .from('staff_roles')
+    .select('*')
+    .order('name');
+
+  if (error) {
+    console.error('Error fetching staff roles:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
 export async function updateMemberDetails(
   memberId: string,
   memberData: {
     first_name?: string;
     last_name?: string;
     email?: string;
-    role?: 'Admin' | 'Manager' | 'Member';
+    phone?: string;
+    avatar_url?: string;
+    address_line1?: string;
+    address_line2?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
+    role?: 'Admin' | 'Manager' | 'Staff' | 'Viewer';
+    default_staff_role_id?: string;
   }
 ) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -554,7 +579,7 @@ export async function updateMemberDetails(
   // Get the member to find their user_id
   const { data: member } = await supabase
     .from('organization_members')
-    .select('user_id, role')
+    .select('user_id, role, default_staff_role_id')
     .eq('id', memberId)
     .single();
 
@@ -563,12 +588,18 @@ export async function updateMemberDetails(
   }
 
   // Update user details if provided
-  if (memberData.first_name !== undefined || memberData.last_name !== undefined || memberData.email !== undefined) {
-    const userUpdates: any = {};
-    if (memberData.first_name !== undefined) userUpdates.first_name = memberData.first_name;
-    if (memberData.last_name !== undefined) userUpdates.last_name = memberData.last_name;
-    if (memberData.email !== undefined) userUpdates.email = memberData.email;
+  const userFields = ['first_name', 'last_name', 'email', 'phone', 'avatar_url', 'address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country'];
+  const userUpdates: any = {};
+  let hasUserUpdates = false;
 
+  for (const field of userFields) {
+    if (memberData[field as keyof typeof memberData] !== undefined) {
+      userUpdates[field] = memberData[field as keyof typeof memberData];
+      hasUserUpdates = true;
+    }
+  }
+
+  if (hasUserUpdates) {
     const { error: userError } = await supabase
       .from('users')
       .update(userUpdates)
@@ -580,16 +611,29 @@ export async function updateMemberDetails(
     }
   }
 
-  // Update role if provided and different
+  // Update organization member data (role and default_staff_role_id)
+  const memberUpdates: any = {};
+  let hasMemberUpdates = false;
+
   if (memberData.role !== undefined && memberData.role !== member.role) {
-    const { error: roleError } = await supabase
+    memberUpdates.role = memberData.role;
+    hasMemberUpdates = true;
+  }
+
+  if (memberData.default_staff_role_id !== undefined && memberData.default_staff_role_id !== member.default_staff_role_id) {
+    memberUpdates.default_staff_role_id = memberData.default_staff_role_id || null;
+    hasMemberUpdates = true;
+  }
+
+  if (hasMemberUpdates) {
+    const { error: memberError } = await supabase
       .from('organization_members')
-      .update({ role: memberData.role })
+      .update(memberUpdates)
       .eq('id', memberId);
 
-    if (roleError) {
-      console.error('Error updating member role:', roleError);
-      throw roleError;
+    if (memberError) {
+      console.error('Error updating member data:', memberError);
+      throw memberError;
     }
   }
 

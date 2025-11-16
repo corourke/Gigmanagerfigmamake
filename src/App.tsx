@@ -14,6 +14,7 @@ import CreateAssetScreen from './components/CreateAssetScreen';
 import KitListScreen from './components/KitListScreen';
 import CreateKitScreen from './components/CreateKitScreen';
 import KitDetailScreen from './components/KitDetailScreen';
+import EditUserProfileDialog from './components/EditUserProfileDialog';
 import { Toaster } from './components/ui/sonner';
 import { createClient } from './utils/supabase/client';
 import { toast } from 'sonner';
@@ -60,6 +61,13 @@ export interface User {
   first_name: string;
   last_name: string;
   avatar_url?: string;
+  phone?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
 }
 
 // Set to true to use mock data instead of real Supabase
@@ -92,6 +100,7 @@ function App() {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
   const [editingOrganization, setEditingOrganization] = useState<Organization | null>(null);
+  const [showEditProfileDialog, setShowEditProfileDialog] = useState(false);
 
   // Get user's role in the current organization
   const getCurrentUserRole = (): UserRole | undefined => {
@@ -293,6 +302,14 @@ function App() {
     setCurrentRoute('org-selection');
   };
 
+  const handleEditProfile = () => {
+    setShowEditProfileDialog(true);
+  };
+
+  const handleProfileUpdated = (updatedUser: User) => {
+    setCurrentUser(updatedUser);
+  };
+
   return (
     <>
       {currentRoute === 'login' && (
@@ -348,6 +365,7 @@ function App() {
           onNavigateToDashboard={handleBackToDashboard}
           onNavigateToAssets={handleNavigateToAssets}
           onNavigateToKits={handleNavigateToKits}
+          onEditProfile={handleEditProfile}
         />
       )}
 
@@ -363,6 +381,7 @@ function App() {
           onNavigateToGigs={handleBackToGigList}
           onNavigateToAssets={handleNavigateToAssets}
           onSwitchOrganization={handleBackToSelection}
+          onEditProfile={handleEditProfile}
           onLogout={handleLogout}
           useMockData={USE_MOCK_DATA}
         />
@@ -409,6 +428,7 @@ function App() {
           onNavigateToTeam={handleNavigateToTeam}
           onNavigateToAssets={handleNavigateToAssets}
           onSwitchOrganization={handleBackToSelection}
+          onEditProfile={handleEditProfile}
           onLogout={handleLogout}
         />
       )}
@@ -507,6 +527,16 @@ function App() {
       )}
       
       <Toaster />
+      
+      {/* Edit Profile Dialog - Available on all screens */}
+      {currentUser && (
+        <EditUserProfileDialog
+          user={currentUser}
+          open={showEditProfileDialog}
+          onOpenChange={setShowEditProfileDialog}
+          onProfileUpdated={handleProfileUpdated}
+        />
+      )}
     </>
   );
 }

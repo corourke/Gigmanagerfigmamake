@@ -14,6 +14,7 @@ import {
   Settings,
   LogOut,
   SwitchCamera,
+  UserCircle,
 } from 'lucide-react';
 import React from 'react';
 import type { Organization, User, UserRole } from '../App';
@@ -29,6 +30,7 @@ interface AppHeaderProps {
   onNavigateToTeam?: () => void;
   onNavigateToAssets?: () => void;
   onSwitchOrganization?: () => void;
+  onEditProfile?: () => void;
   onLogout: () => void;
 }
 
@@ -49,6 +51,7 @@ const AppHeader = React.memo(function AppHeader({
   onNavigateToTeam,
   onNavigateToAssets,
   onSwitchOrganization,
+  onEditProfile,
   onLogout,
 }: AppHeaderProps) {
   const getInitials = (firstName: string, lastName: string) => {
@@ -110,6 +113,15 @@ const AppHeader = React.memo(function AppHeader({
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                {onEditProfile && (
+                  <>
+                    <DropdownMenuItem onClick={onEditProfile}>
+                      <UserCircle className="w-4 h-4 mr-2" />
+                      Edit Profile
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={onLogout} className="text-red-600">
                   <LogOut className="w-4 h-4 mr-2" />
                   Sign Out
