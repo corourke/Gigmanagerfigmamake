@@ -6,12 +6,14 @@
 import { createClient } from './supabase/client';
 import { projectId, publicAnonKey } from './supabase/info';
 
-const supabase = createClient();
+// Get a fresh client instance for each API call to ensure we have the latest session
+const getSupabase = () => createClient();
 const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4`;
 
 // ===== User Management =====
 
 export async function getUserProfile(userId: string) {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('users')
     .select('*')
@@ -33,6 +35,7 @@ export async function createUserProfile(userData: {
   last_name?: string;
   avatar_url?: string;
 }) {
+  const supabase = getSupabase();
   // Check if user already exists
   const existing = await getUserProfile(userData.id);
   if (existing) {
@@ -64,6 +67,7 @@ export async function updateUserProfile(userId: string, updates: {
   postal_code?: string;
   country?: string;
 }) {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('users')
     .update({
@@ -83,6 +87,7 @@ export async function updateUserProfile(userId: string, updates: {
 }
 
 export async function searchUsers(search?: string, organizationIds?: string[]) {
+  const supabase = getSupabase();
   // Get current authenticated user
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
@@ -141,6 +146,7 @@ export async function searchUsers(search?: string, organizationIds?: string[]) {
 }
 
 export async function getUserOrganizations(userId: string) {
+  const supabase = getSupabase();
   // Get current authenticated user
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
@@ -178,6 +184,7 @@ export async function getUserOrganizations(userId: string) {
 // ===== Organization Management =====
 
 export async function searchOrganizations(filters?: { type?: string; search?: string }) {
+  const supabase = getSupabase();
   let query = supabase
     .from('organizations')
     .select('*')
@@ -216,6 +223,7 @@ export async function createOrganization(orgData: {
   country?: string;
   place_id?: string;
 }) {
+  const supabase = getSupabase();
   // Get current user from session
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
@@ -253,6 +261,7 @@ export async function createOrganization(orgData: {
 }
 
 export async function joinOrganization(orgId: string) {
+  const supabase = getSupabase();
   // Get current user from session
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
@@ -303,6 +312,7 @@ export async function joinOrganization(orgId: string) {
 // ===== Team Management =====
 
 export async function getOrganizationMembersWithAuth(organizationId: string) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -325,6 +335,7 @@ export async function getOrganizationMembersWithAuth(organizationId: string) {
 }
 
 export async function getOrganizationMembers(organizationId: string) {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('organization_members')
     .select(`
@@ -348,6 +359,7 @@ export async function getOrganizationMembers(organizationId: string) {
 }
 
 export async function searchAllUsers(search: string) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -376,6 +388,7 @@ export async function addExistingUserToOrganization(
   userId: string,
   role: 'Admin' | 'Manager' | 'Member'
 ) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -423,6 +436,7 @@ export async function inviteUserToOrganization(
   email: string,
   role: 'Admin' | 'Manager' | 'Member'
 ) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -490,6 +504,7 @@ export async function inviteUserToOrganization(
 }
 
 export async function getOrganizationInvitations(organizationId: string) {
+  const supabase = getSupabase();
   try {
     const { data, error } = await supabase
       .from('invitations')
@@ -523,6 +538,7 @@ export async function getOrganizationInvitations(organizationId: string) {
 }
 
 export async function cancelInvitation(invitationId: string) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -542,6 +558,7 @@ export async function cancelInvitation(invitationId: string) {
 // ===== Staff Roles Management =====
 
 export async function getStaffRoles() {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('staff_roles')
     .select('*')
@@ -573,6 +590,7 @@ export async function updateMemberDetails(
     default_staff_role_id?: string;
   }
 ) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -661,6 +679,7 @@ export async function updateMemberDetails(
 }
 
 export async function updateMemberRole(memberId: string, role: 'Admin' | 'Manager' | 'Member') {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -680,6 +699,7 @@ export async function updateMemberRole(memberId: string, role: 'Admin' | 'Manage
 }
 
 export async function removeMember(memberId: string) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -697,6 +717,7 @@ export async function removeMember(memberId: string) {
 }
 
 export async function inviteMember(organizationId: string, email: string, role: 'Admin' | 'Manager' | 'Member') {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
@@ -753,6 +774,7 @@ export async function inviteMember(organizationId: string, email: string, role: 
 // ===== Gig Management =====
 
 export async function getGigsForOrganization(organizationId: string) {
+  const supabase = getSupabase();
   // Fetch gigs where this organization is a participant
   const { data: gigParticipants, error } = await supabase
     .from('gig_participants')
@@ -803,6 +825,7 @@ export async function getGigsForOrganization(organizationId: string) {
 }
 
 export async function getGig(gigId: string) {
+  const supabase = getSupabase();
   // Get current user from session
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
@@ -885,6 +908,7 @@ export async function createGig(gigData: {
     }>;
   }>;
 }) {
+  const supabase = getSupabase();
   try {
     console.log('createGig called with data:', JSON.stringify(gigData, null, 2));
     
@@ -1130,6 +1154,7 @@ export async function updateGig(gigId: string, gigData: {
     }>;
   }>;
 }) {
+  const supabase = getSupabase();
   // Get current user from session
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
@@ -1410,6 +1435,7 @@ export async function updateGig(gigId: string, gigData: {
 }
 
 export async function deleteGig(gigId: string) {
+  const supabase = getSupabase();
   const { error } = await supabase
     .from('gigs')
     .delete()
@@ -1444,6 +1470,7 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
     notes?: string | null;
   }>;
 }>) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
@@ -1645,6 +1672,7 @@ export async function getAssets(organizationId: string, filters?: {
   insurance_added?: boolean;
   search?: string;
 }) {
+  const supabase = getSupabase();
   let query = supabase
     .from('assets')
     .select('*')
@@ -1678,6 +1706,7 @@ export async function getAssets(organizationId: string, filters?: {
 }
 
 export async function getAsset(assetId: string) {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('assets')
     .select('*')
@@ -1706,6 +1735,7 @@ export async function createAsset(assetData: {
   description?: string;
   insurance_policy_added?: boolean;
 }) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
@@ -1741,6 +1771,7 @@ export async function updateAsset(assetId: string, assetData: {
   description?: string;
   insurance_policy_added?: boolean;
 }) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
@@ -1765,6 +1796,7 @@ export async function updateAsset(assetId: string, assetData: {
 }
 
 export async function deleteAsset(assetId: string) {
+  const supabase = getSupabase();
   const { error } = await supabase
     .from('assets')
     .delete()
@@ -1784,6 +1816,7 @@ export async function getKits(organizationId: string, filters?: {
   category?: string;
   search?: string;
 }) {
+  const supabase = getSupabase();
   let query = supabase
     .from('kits')
     .select(`
@@ -1815,6 +1848,7 @@ export async function getKits(organizationId: string, filters?: {
 }
 
 export async function getKit(kitId: string) {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('kits')
     .select(`
@@ -1849,6 +1883,7 @@ export async function createKit(kitData: {
     notes?: string;
   }>;
 }) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
@@ -1907,6 +1942,7 @@ export async function updateKit(kitId: string, kitData: {
     notes?: string;
   }>;
 }) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
@@ -1978,6 +2014,7 @@ export async function updateKit(kitId: string, kitData: {
 }
 
 export async function deleteKit(kitId: string) {
+  const supabase = getSupabase();
   const { error } = await supabase
     .from('kits')
     .delete()
@@ -1992,6 +2029,7 @@ export async function deleteKit(kitId: string) {
 }
 
 export async function duplicateKit(kitId: string, newName?: string) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
@@ -2045,6 +2083,7 @@ export async function duplicateKit(kitId: string, newName?: string) {
 // ===== Gig Kit Assignment =====
 
 export async function assignKitToGig(gigId: string, kitId: string, organizationId: string, notes?: string) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
@@ -2070,6 +2109,7 @@ export async function assignKitToGig(gigId: string, kitId: string, organizationI
 }
 
 export async function removeKitFromGig(assignmentId: string) {
+  const supabase = getSupabase();
   const { error } = await supabase
     .from('gig_kit_assignments')
     .delete()
@@ -2084,6 +2124,7 @@ export async function removeKitFromGig(assignmentId: string) {
 }
 
 export async function getGigKits(gigId: string, organizationId?: string) {
+  const supabase = getSupabase();
   let query = supabase
     .from('gig_kit_assignments')
     .select(`
@@ -2118,6 +2159,7 @@ export async function getGigKits(gigId: string, organizationId?: string) {
 }
 
 export async function checkKitConflicts(kitId: string, gigId: string, startTime: string, endTime: string) {
+  const supabase = getSupabase();
   // Get kit assets
   const kit = await getKit(kitId);
   
@@ -2190,6 +2232,7 @@ export async function checkKitConflicts(kitId: string, gigId: string, startTime:
 // ===== Gig Bids Management =====
 
 export async function getGigBids(gigId: string, organizationId?: string) {
+  const supabase = getSupabase();
   let query = supabase
     .from('gig_bids')
     .select('*')
@@ -2218,6 +2261,7 @@ export async function createGigBid(bidData: {
   result?: string;
   notes?: string;
 }) {
+  const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
   const user = session.user;
@@ -2245,6 +2289,7 @@ export async function updateGigBid(bidId: string, bidData: {
   result?: string;
   notes?: string;
 }) {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('gig_bids')
     .update(bidData)
@@ -2261,6 +2306,7 @@ export async function updateGigBid(bidId: string, bidData: {
 }
 
 export async function deleteGigBid(bidId: string) {
+  const supabase = getSupabase();
   const { error } = await supabase
     .from('gig_bids')
     .delete()

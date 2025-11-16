@@ -81,6 +81,12 @@ export default function Dashboard({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    console.log('Dashboard mounted/updated:', {
+      organizationId: organization.id,
+      organizationName: organization.name,
+      userId: user.id,
+      userRole: userRole,
+    });
     fetchDashboardStats();
   }, [organization.id]);
 
@@ -93,7 +99,9 @@ export default function Dashboard({
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
-        setError('Not authenticated');
+        console.error('Dashboard: No active session found');
+        setError('Not authenticated. Please sign in again.');
+        setLoading(false);
         return;
       }
 
@@ -110,7 +118,21 @@ export default function Dashboard({
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch dashboard stats');
+        console.error('Dashboard API error:', {
+          status: response.status,
+          error: errorData,
+          organizationId: organization.id,
+        });
+        
+        if (response.status === 401) {
+          setError('Session expired. Please sign in again.');
+        } else if (response.status === 403) {
+          setError('You do not have permission to view this organization\'s dashboard.');
+        } else {
+          setError(errorData.error || 'Failed to fetch dashboard stats');
+        }
+        setLoading(false);
+        return;
       }
 
       const data = await response.json();

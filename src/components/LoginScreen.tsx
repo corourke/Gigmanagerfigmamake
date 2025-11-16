@@ -1,11 +1,3 @@
-import { useState, useEffect } from 'react';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Alert, AlertDescription } from './ui/alert';
-import { Separator } from './ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Building2, AlertCircle, Loader2, Mail, Lock } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { getUserProfile, createUserProfile, getUserOrganizations } from '../utils/api';
 import type { User, OrganizationMembership } from '../App';
@@ -17,17 +9,13 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({ onLogin, useMockData = false }: LoginScreenProps) {
+  const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
-  
-  // Email/Password form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  
-  const supabase = createClient();
 
   // Check for existing session on mount
   useEffect(() => {
@@ -38,6 +26,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
     if (useMockData) return;
 
     try {
+      const supabase = createClient();
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError) {
@@ -67,6 +56,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
         console.log('User profile not found, creating new profile...');
         
         // Get user metadata from Supabase auth
+        const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
         
         userProfile = await createUserProfile({
@@ -123,6 +113,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
     }
 
     try {
+      const supabase = createClient();
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -163,6 +154,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
 
     try {
       // Sign up the user
+      const supabase = createClient();
       const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -188,7 +180,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
         // Email confirmation required
         setError('Please check your email to confirm your account before signing in.');
         setIsLoading(false);
-        setAuthMode('signin');
+        setIsSignUp(false);
       }
     } catch (err: any) {
       console.error('Error during email sign up:', err);
@@ -211,6 +203,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
     }
 
     try {
+      const supabase = createClient();
       const { data, error: authError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -247,7 +240,7 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
 
         {/* Login Card */}
         <div className="bg-white rounded-xl shadow-lg p-8">
-          <Tabs value={authMode} onValueChange={(v) => setAuthMode(v as 'signin' | 'signup')} className="w-full">
+          <Tabs value={isSignUp ? 'signup' : 'signin'} onValueChange={(v) => setIsSignUp(v === 'signup')} className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
