@@ -7,6 +7,7 @@ export type RouteType =
   | 'create-gig' 
   | 'edit-gig'
   | 'gig-detail' 
+  | 'team'
   | 'asset-list' 
   | 'create-asset' 
   | 'edit-asset'
@@ -58,7 +59,7 @@ const NavigationMenu = React.memo(function NavigationMenu({
       label: 'Team',
       icon: Users,
       onClick: onNavigateToTeam,
-      isActive: (route) => false, // Team not implemented yet
+      isActive: (route) => route === 'team',
     },
     {
       id: 'equipment',

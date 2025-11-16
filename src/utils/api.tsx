@@ -4,8 +4,10 @@
  */
 
 import { createClient } from './supabase/client';
+import { projectId, publicAnonKey } from './supabase/info';
 
 const supabase = createClient();
+const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-de012ad4`;
 
 // ===== User Management =====
 
@@ -296,6 +298,412 @@ export async function joinOrganization(orgId: string) {
   }
 
   return { organization: org, role: membership.role };
+}
+
+// ===== Team Management =====
+
+export async function getOrganizationMembersWithAuth(organizationId: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  const response = await fetch(
+    `${API_BASE_URL}/organizations/${organizationId}/members`,
+    {
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to fetch organization members');
+  }
+
+  return await response.json();
+}
+
+export async function getOrganizationMembers(organizationId: string) {
+  const { data, error } = await supabase
+    .from('organization_members')
+    .select(`
+      *,
+      user:users(
+        id,
+        first_name,
+        last_name,
+        email
+      )
+    `)
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching organization members:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function searchAllUsers(search: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  if (!search || search.length < 2) {
+    return [];
+  }
+
+  // Search all users in the system
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`)
+    .order('first_name')
+    .limit(20);
+
+  if (error) {
+    console.error('Error searching users:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function addExistingUserToOrganization(
+  organizationId: string,
+  userId: string,
+  role: 'Admin' | 'Manager' | 'Member'
+) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  // Check if user is already a member
+  const { data: existingMember } = await supabase
+    .from('organization_members')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (existingMember) {
+    throw new Error('User is already a member of this organization');
+  }
+
+  // Add user to organization
+  const { data, error } = await supabase
+    .from('organization_members')
+    .insert({
+      organization_id: organizationId,
+      user_id: userId,
+      role,
+    })
+    .select(`
+      *,
+      user:users(
+        id,
+        first_name,
+        last_name,
+        email
+      )
+    `)
+    .single();
+
+  if (error) {
+    console.error('Error adding user to organization:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function inviteUserToOrganization(
+  organizationId: string,
+  email: string,
+  role: 'Admin' | 'Manager' | 'Member'
+) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  // Check if user already exists in the system
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (existingUser) {
+    throw new Error('A user with this email already exists. Please use "Add Existing User" instead.');
+  }
+
+  // Check if there's already a pending invitation
+  const { data: existingInvitation, error: checkError } = await supabase
+    .from('invitations')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .eq('email', email)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  // Handle case where invitations table doesn't exist yet
+  if (checkError && (checkError.code === 'PGRST205' || checkError.message.includes('Could not find'))) {
+    throw new Error('The invitations table has not been created yet. Please run the migration from APPLY_INVITATIONS_TABLE.md');
+  }
+
+  if (existingInvitation) {
+    throw new Error('An invitation has already been sent to this email address');
+  }
+
+  // Generate invitation token
+  const token = crypto.randomUUID();
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
+
+  // Create invitation
+  const { data, error } = await supabase
+    .from('invitations')
+    .insert({
+      organization_id: organizationId,
+      email,
+      role,
+      invited_by: session.user.id,
+      token,
+      expires_at: expiresAt.toISOString(),
+      status: 'pending',
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating invitation:', error);
+    
+    // Better error message if table doesn't exist
+    if (error.code === 'PGRST205' || error.message.includes('Could not find')) {
+      throw new Error('The invitations table has not been created yet. Please run the migration from APPLY_INVITATIONS_TABLE.md');
+    }
+    
+    throw error;
+  }
+
+  return data;
+}
+
+export async function getOrganizationInvitations(organizationId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('invitations')
+      .select(`
+        *,
+        invited_by_user:invited_by(
+          first_name,
+          last_name,
+          email
+        )
+      `)
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      // If table doesn't exist yet, return empty array instead of throwing
+      if (error.code === 'PGRST205' || error.message.includes('Could not find')) {
+        console.warn('Invitations table not yet created. Please run the migration from APPLY_INVITATIONS_TABLE.md');
+        return [];
+      }
+      console.error('Error fetching invitations:', error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error: any) {
+    // Handle network errors gracefully
+    console.error('Error fetching invitations:', error);
+    return [];
+  }
+}
+
+export async function cancelInvitation(invitationId: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('invitations')
+    .update({ status: 'cancelled' })
+    .eq('id', invitationId);
+
+  if (error) {
+    console.error('Error cancelling invitation:', error);
+    throw error;
+  }
+
+  return { success: true };
+}
+
+export async function updateMemberDetails(
+  memberId: string,
+  memberData: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    role?: 'Admin' | 'Manager' | 'Member';
+  }
+) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  // Get the member to find their user_id
+  const { data: member } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('id', memberId)
+    .single();
+
+  if (!member) {
+    throw new Error('Member not found');
+  }
+
+  // Update user details if provided
+  if (memberData.first_name !== undefined || memberData.last_name !== undefined || memberData.email !== undefined) {
+    const userUpdates: any = {};
+    if (memberData.first_name !== undefined) userUpdates.first_name = memberData.first_name;
+    if (memberData.last_name !== undefined) userUpdates.last_name = memberData.last_name;
+    if (memberData.email !== undefined) userUpdates.email = memberData.email;
+
+    const { error: userError } = await supabase
+      .from('users')
+      .update(userUpdates)
+      .eq('id', member.user_id);
+
+    if (userError) {
+      console.error('Error updating user details:', userError);
+      throw userError;
+    }
+  }
+
+  // Update role if provided and different
+  if (memberData.role !== undefined && memberData.role !== member.role) {
+    const { error: roleError } = await supabase
+      .from('organization_members')
+      .update({ role: memberData.role })
+      .eq('id', memberId);
+
+    if (roleError) {
+      console.error('Error updating member role:', roleError);
+      throw roleError;
+    }
+  }
+
+  // Fetch updated member data
+  const { data: updatedMember, error } = await supabase
+    .from('organization_members')
+    .select(`
+      *,
+      user:users(
+        id,
+        first_name,
+        last_name,
+        email
+      )
+    `)
+    .eq('id', memberId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching updated member:', error);
+    throw error;
+  }
+
+  return updatedMember;
+}
+
+export async function updateMemberRole(memberId: string, role: 'Admin' | 'Manager' | 'Member') {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('organization_members')
+    .update({ role })
+    .eq('id', memberId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating member role:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function removeMember(memberId: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('organization_members')
+    .delete()
+    .eq('id', memberId);
+
+  if (error) {
+    console.error('Error removing member:', error);
+    throw error;
+  }
+
+  return { success: true };
+}
+
+export async function inviteMember(organizationId: string, email: string, role: 'Admin' | 'Manager' | 'Member') {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+
+  // Check if user exists
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', email)
+    .single();
+
+  if (!existingUser) {
+    throw new Error('User with this email does not exist. They must sign up first.');
+  }
+
+  // Check if already a member
+  const { data: existingMember } = await supabase
+    .from('organization_members')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .eq('user_id', existingUser.id)
+    .single();
+
+  if (existingMember) {
+    throw new Error('User is already a member of this organization');
+  }
+
+  // Add member
+  const { data, error } = await supabase
+    .from('organization_members')
+    .insert({
+      organization_id: organizationId,
+      user_id: existingUser.id,
+      role,
+    })
+    .select(`
+      *,
+      user:users(
+        id,
+        first_name,
+        last_name,
+        email
+      )
+    `)
+    .single();
+
+  if (error) {
+    console.error('Error inviting member:', error);
+    throw error;
+  }
+
+  return data;
 }
 
 // ===== Gig Management =====

@@ -8,6 +8,7 @@ import Dashboard from './components/Dashboard';
 import GigListScreen from './components/GigListScreen';
 import CreateGigScreen from './components/CreateGigScreen';
 import GigDetailScreen from './components/GigDetailScreen';
+import TeamScreen from './components/TeamScreen';
 import AssetListScreen from './components/AssetListScreen';
 import CreateAssetScreen from './components/CreateAssetScreen';
 import KitListScreen from './components/KitListScreen';
@@ -75,6 +76,7 @@ type Route =
   | 'gig-list'
   | 'create-gig'
   | 'gig-detail'
+  | 'team'
   | 'asset-list'
   | 'create-asset'
   | 'kit-list'
@@ -174,6 +176,10 @@ function App() {
 
   const handleNavigateToGigs = () => {
     setCurrentRoute('gig-list');
+  };
+
+  const handleNavigateToTeam = () => {
+    setCurrentRoute('team');
   };
 
   const handleCreateGig = () => {
@@ -338,6 +344,7 @@ function App() {
           onBackToSelection={handleBackToSelection}
           onLogout={handleLogout}
           onNavigateToGigs={handleNavigateToGigs}
+          onNavigateToTeam={handleNavigateToTeam}
           onNavigateToDashboard={handleBackToDashboard}
           onNavigateToAssets={handleNavigateToAssets}
           onNavigateToKits={handleNavigateToKits}
@@ -387,6 +394,20 @@ function App() {
           onBack={handleBackToGigList}
           onNavigateToDashboard={handleBackToDashboard}
           onNavigateToGigs={handleBackToGigList}
+          onSwitchOrganization={handleBackToSelection}
+          onLogout={handleLogout}
+        />
+      )}
+      
+      {currentRoute === 'team' && selectedOrganization && currentUser && (
+        <TeamScreen
+          organization={selectedOrganization}
+          user={currentUser}
+          userRole={getCurrentUserRole()}
+          onNavigateToDashboard={handleBackToDashboard}
+          onNavigateToGigs={handleBackToGigList}
+          onNavigateToTeam={handleNavigateToTeam}
+          onNavigateToAssets={handleNavigateToAssets}
           onSwitchOrganization={handleBackToSelection}
           onLogout={handleLogout}
         />

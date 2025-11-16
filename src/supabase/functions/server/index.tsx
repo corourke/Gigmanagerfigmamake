@@ -671,6 +671,200 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ===== Team Management =====
+    
+    // Get organization members with auth data
+    if (path.match(/^\/organizations\/([^\/]+)\/members$/) && method === 'GET') {
+      const orgIdMatch = path.match(/^\/organizations\/([^\/]+)\/members$/);
+      const orgId = orgIdMatch ? orgIdMatch[1] : null;
+      
+      if (!orgId) {
+        return new Response(JSON.stringify({ error: 'Organization ID required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Verify user is a member of the organization
+      const { error: memberError } = await verifyOrgMembership(user.id, orgId);
+      if (memberError) {
+        return new Response(JSON.stringify({ error: memberError }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Get organization members with public user data
+      const { data: members, error } = await supabaseAdmin
+        .from('organization_members')
+        .select(`
+          *,
+          user:users(
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching organization members:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Enrich with auth.users data (last_sign_in_at)
+      const enrichedMembers = await Promise.all(
+        (members || []).map(async (member) => {
+          // Get auth.users data using service role
+          const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(member.user_id);
+          
+          return {
+            ...member,
+            user: {
+              ...member.user,
+              last_sign_in_at: authUser?.user?.last_sign_in_at || null,
+            }
+          };
+        })
+      );
+
+      return new Response(JSON.stringify(enrichedMembers), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Create user and add to organization
+    if (path.match(/^\/organizations\/([^\/]+)\/members\/create$/) && method === 'POST') {
+      const orgIdMatch = path.match(/^\/organizations\/([^\/]+)\/members\/create$/);
+      const orgId = orgIdMatch ? orgIdMatch[1] : null;
+      
+      if (!orgId) {
+        return new Response(JSON.stringify({ error: 'Organization ID required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Verify user is Admin or Manager of the organization
+      const { error: memberError } = await verifyOrgMembership(user.id, orgId, ['Admin', 'Manager']);
+      if (memberError) {
+        return new Response(JSON.stringify({ error: memberError }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const body = await req.json();
+      const { email, first_name, last_name, password, role } = body;
+
+      if (!email || !first_name || !last_name || !password || !role) {
+        return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Create auth user
+      const { data: authData, error: createAuthError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true, // Auto-confirm since email server not configured
+        user_metadata: {
+          first_name,
+          last_name,
+        },
+      });
+
+      if (createAuthError || !authData.user) {
+        console.error('Error creating auth user:', createAuthError);
+        return new Response(JSON.stringify({ error: createAuthError?.message || 'Failed to create user' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Create user profile
+      const { data: userProfile, error: profileError } = await supabaseAdmin
+        .from('users')
+        .insert({
+          id: authData.user.id,
+          email,
+          first_name,
+          last_name,
+        })
+        .select()
+        .single();
+
+      if (profileError) {
+        console.error('Error creating user profile:', profileError);
+        // Clean up auth user
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+        return new Response(JSON.stringify({ error: profileError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Add user to organization
+      const { data: memberData, error: memberInsertError } = await supabaseAdmin
+        .from('organization_members')
+        .insert({
+          organization_id: orgId,
+          user_id: authData.user.id,
+          role,
+        })
+        .select(`
+          *,
+          user:users(
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .single();
+
+      if (memberInsertError) {
+        console.error('Error adding member to organization:', memberInsertError);
+        // Clean up user profile and auth user
+        await supabaseAdmin.from('users').delete().eq('id', authData.user.id);
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+        return new Response(JSON.stringify({ error: memberInsertError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(memberData), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // ===== Gig Management =====
     
     // Get gigs for organization
@@ -1468,6 +1662,244 @@ Deno.serve(async (req) => {
         website: place.website,
         editorial_summary: place.editorial_summary?.overview,
         address_components: place.address_components || [],
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ===== Dashboard Stats =====
+    
+    // Get dashboard statistics
+    const dashboardMatch = path.match(/^\/organizations\/([^\/]+)\/dashboard$/);
+    if (dashboardMatch && method === 'GET') {
+      const orgId = dashboardMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Verify user is a member of the organization
+      const { error: memberError } = await verifyOrgMembership(user.id, orgId);
+      if (memberError) {
+        return new Response(JSON.stringify({ error: memberError }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Get gigs by status
+      const { data: gigsByStatus } = await supabaseAdmin
+        .from('gig_participants')
+        .select('gig_id, gigs!inner(id, status)')
+        .eq('organization_id', orgId);
+
+      const statusCounts = {
+        DateHold: 0,
+        Proposed: 0,
+        Booked: 0,
+        Completed: 0,
+        Cancelled: 0,
+        Settled: 0,
+      };
+
+      (gigsByStatus || []).forEach((gp: any) => {
+        const status = gp.gigs?.status;
+        if (status && statusCounts.hasOwnProperty(status)) {
+          statusCounts[status]++;
+        }
+      });
+
+      // Get asset values
+      const { data: assets } = await supabaseAdmin
+        .from('assets')
+        .select('cost, replacement_value, insurance_policy_added')
+        .eq('organization_id', orgId);
+
+      let totalAssetValue = 0;
+      let totalInsuredValue = 0;
+
+      (assets || []).forEach((asset: any) => {
+        if (asset.cost) {
+          totalAssetValue += parseFloat(asset.cost);
+        }
+        if (asset.insurance_policy_added && asset.replacement_value) {
+          totalInsuredValue += parseFloat(asset.replacement_value);
+        }
+      });
+
+      // Get kits rental value
+      const { data: kits } = await supabaseAdmin
+        .from('kits')
+        .select('rental_value')
+        .eq('organization_id', orgId);
+
+      let totalRentalValue = 0;
+      (kits || []).forEach((kit: any) => {
+        if (kit.rental_value) {
+          totalRentalValue += parseFloat(kit.rental_value);
+        }
+      });
+
+      // Calculate revenue for different periods
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+      // Revenue this month
+      const { data: thisMonthGigs } = await supabaseAdmin
+        .from('gig_participants')
+        .select('gig_id, gigs!inner(amount_paid, start)')
+        .eq('organization_id', orgId)
+        .gte('gigs.start', startOfMonth.toISOString());
+
+      let revenueThisMonth = 0;
+      (thisMonthGigs || []).forEach((gp: any) => {
+        if (gp.gigs?.amount_paid) {
+          revenueThisMonth += parseFloat(gp.gigs.amount_paid);
+        }
+      });
+
+      // Revenue last month
+      const { data: lastMonthGigs } = await supabaseAdmin
+        .from('gig_participants')
+        .select('gig_id, gigs!inner(amount_paid, start)')
+        .eq('organization_id', orgId)
+        .gte('gigs.start', startOfLastMonth.toISOString())
+        .lte('gigs.start', endOfLastMonth.toISOString());
+
+      let revenueLastMonth = 0;
+      (lastMonthGigs || []).forEach((gp: any) => {
+        if (gp.gigs?.amount_paid) {
+          revenueLastMonth += parseFloat(gp.gigs.amount_paid);
+        }
+      });
+
+      // Revenue this year
+      const { data: thisYearGigs } = await supabaseAdmin
+        .from('gig_participants')
+        .select('gig_id, gigs!inner(amount_paid, start)')
+        .eq('organization_id', orgId)
+        .gte('gigs.start', startOfYear.toISOString());
+
+      let revenueThisYear = 0;
+      (thisYearGigs || []).forEach((gp: any) => {
+        if (gp.gigs?.amount_paid) {
+          revenueThisYear += parseFloat(gp.gigs.amount_paid);
+        }
+      });
+
+      // Get upcoming gigs (next 30 days)
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+      const { data: upcomingGigsData } = await supabaseAdmin
+        .from('gig_participants')
+        .select(`
+          gig_id,
+          gigs!inner(
+            id,
+            title,
+            start,
+            status
+          )
+        `)
+        .eq('organization_id', orgId)
+        .gte('gigs.start', now.toISOString())
+        .lte('gigs.start', thirtyDaysFromNow.toISOString())
+        .order('gigs(start)', { ascending: true })
+        .limit(10);
+
+      // For each upcoming gig, get Act and Venue organizations
+      const upcomingGigs = await Promise.all(
+        (upcomingGigsData || []).map(async (gp: any) => {
+          const gigId = gp.gigs.id;
+
+          // Get Act organization
+          const { data: actParticipant } = await supabaseAdmin
+            .from('gig_participants')
+            .select('organization:organizations(name)')
+            .eq('gig_id', gigId)
+            .eq('role', 'Act')
+            .maybeSingle();
+
+          // Get Venue organization
+          const { data: venueParticipant } = await supabaseAdmin
+            .from('gig_participants')
+            .select('organization:organizations(name)')
+            .eq('gig_id', gigId)
+            .eq('role', 'Venue')
+            .maybeSingle();
+
+          // Get staffing statistics
+          const { data: slots } = await supabaseAdmin
+            .from('gig_staff_slots')
+            .select(`
+              id,
+              required_count,
+              gig_staff_assignments(
+                id,
+                status
+              )
+            `)
+            .eq('gig_id', gigId);
+
+          let unfilledSlots = 0;
+          let unconfirmedAssignments = 0;
+          let rejectedAssignments = 0;
+          let confirmedAssignments = 0;
+
+          (slots || []).forEach((slot: any) => {
+            const assignments = slot.gig_staff_assignments || [];
+            const confirmedCount = assignments.filter((a: any) => a.status === 'Confirmed').length;
+            const unconfirmedCount = assignments.filter((a: any) => a.status !== 'Confirmed' && a.status !== 'Rejected').length;
+            const rejectedCount = assignments.filter((a: any) => a.status === 'Rejected').length;
+
+            confirmedAssignments += confirmedCount;
+            unconfirmedAssignments += unconfirmedCount;
+            rejectedAssignments += rejectedCount;
+
+            if (confirmedCount < slot.required_count) {
+              unfilledSlots += (slot.required_count - confirmedCount);
+            }
+          });
+
+          return {
+            id: gp.gigs.id,
+            title: gp.gigs.title,
+            start: gp.gigs.start,
+            status: gp.gigs.status,
+            act: actParticipant?.organization?.name || 'N/A',
+            venue: venueParticipant?.organization?.name || 'N/A',
+            staffing: {
+              unfilledSlots,
+              unconfirmedAssignments,
+              rejectedAssignments,
+              confirmedAssignments,
+            },
+          };
+        })
+      );
+
+      return new Response(JSON.stringify({
+        gigsByStatus: statusCounts,
+        assetValues: {
+          totalAssetValue,
+          totalInsuredValue,
+          totalRentalValue,
+        },
+        revenue: {
+          thisMonth: revenueThisMonth,
+          lastMonth: revenueLastMonth,
+          thisYear: revenueThisYear,
+        },
+        upcomingGigs,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

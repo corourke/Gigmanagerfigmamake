@@ -33,4 +33,7 @@ Migration workflow:
 * When updating data in the database through a user edit action (whether on a form, or inline editing
   in a table) ensure that we ONLY update database columns (including rows in related tables) for 
   values that have been changed in the UI. We should not make changes to column values that have not 
-  changed to avoid triggering change logic in the back-end. 
+  changed to avoid triggering change logic in the back-end.
+* It is not necessary to include code to gracefully handle the case where a table 
+  doesn't exist as we will always assume that migrations will be run. 
+* Do not add or maintain any code to handle mock data -- we are using a live database. 

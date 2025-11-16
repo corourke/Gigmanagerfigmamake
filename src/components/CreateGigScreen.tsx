@@ -21,7 +21,10 @@ import {
   ChevronLeft,
   Lock,
   AlertCircle,
-  Building2
+  Building2,
+  Package,
+  ExternalLink,
+  Info
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -66,7 +69,7 @@ import MarkdownEditor from './MarkdownEditor';
 import type { User, Organization, OrganizationType, UserRole } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { projectId } from '../utils/supabase/info';
-import { getGig, updateGig, createGig, deleteGig, createGigBid, updateGigBid, deleteGigBid } from '../utils/api';
+import { getGig, updateGig, createGig, deleteGig, createGigBid, updateGigBid, deleteGigBid, getGigKits, assignKitToGig, removeKitFromGig, getKits } from '../utils/api';
 
 const supabase = createClient();
 
@@ -259,6 +262,7 @@ export default function CreateGigScreen({
   const [availableKits, setAvailableKits] = useState<any[]>([]);
   const [showKitNotes, setShowKitNotes] = useState<string | null>(null);
   const [currentKitNotes, setCurrentKitNotes] = useState('');
+  const [showKitDetails, setShowKitDetails] = useState<any | null>(null);
 
   // Bids
   const [bids, setBids] = useState<any[]>([]);
@@ -268,6 +272,7 @@ export default function CreateGigScreen({
   // Load staff roles from database
   useEffect(() => {
     loadStaffRoles();
+    loadAvailableKits();
   }, []);
 
   // Load gig data in edit mode
@@ -300,6 +305,15 @@ export default function CreateGigScreen({
       console.error('Error loading staff roles:', error);
     } finally {
       setIsLoadingRoles(false);
+    }
+  };
+
+  const loadAvailableKits = async () => {
+    try {
+      const kits = await getKits(organization.id);
+      setAvailableKits(kits || []);
+    } catch (error) {
+      console.error('Error loading available kits:', error);
     }
   };
 
@@ -388,6 +402,14 @@ export default function CreateGigScreen({
           notes: b.notes || '',
         }));
         setBids(loadedBids);
+      }
+
+      // Load kit assignments
+      try {
+        const kitAssignmentsData = await getGigKits(gigId, organization.id);
+        setKitAssignments(kitAssignmentsData || []);
+      } catch (error) {
+        console.error('Error loading kit assignments:', error);
       }
 
       toast.success('Gig loaded successfully');
@@ -624,6 +646,66 @@ export default function CreateGigScreen({
       setShowBidNotes(null);
       setCurrentBidNotes('');
     }
+  };
+
+  // Kit Assignment Management
+  const handleAssignKit = async (kitId: string) => {
+    if (!gigId) {
+      // If not in edit mode, just add to local state
+      const kit = availableKits.find(k => k.id === kitId);
+      if (kit) {
+        const newAssignment = {
+          id: Math.random().toString(36).substr(2, 9),
+          kit_id: kitId,
+          kit: kit,
+          notes: '',
+          assigned_at: new Date().toISOString(),
+        };
+        setKitAssignments([...kitAssignments, newAssignment]);
+        toast.success('Kit assigned');
+      }
+      return;
+    }
+
+    // In edit mode, save to database
+    try {
+      await assignKitToGig(gigId, kitId, organization.id);
+      const updatedAssignments = await getGigKits(gigId, organization.id);
+      setKitAssignments(updatedAssignments || []);
+      toast.success('Kit assigned to gig');
+    } catch (error: any) {
+      console.error('Error assigning kit:', error);
+      toast.error(error.message || 'Failed to assign kit');
+    }
+  };
+
+  const handleRemoveKit = async (assignmentId: string) => {
+    if (!gigId) {
+      // If not in edit mode, just remove from local state
+      setKitAssignments(kitAssignments.filter(a => a.id !== assignmentId));
+      toast.success('Kit removed');
+      return;
+    }
+
+    // In edit mode, delete from database
+    try {
+      await removeKitFromGig(assignmentId);
+      setKitAssignments(kitAssignments.filter(a => a.id !== assignmentId));
+      toast.success('Kit removed from gig');
+    } catch (error: any) {
+      console.error('Error removing kit:', error);
+      toast.error(error.message || 'Failed to remove kit');
+    }
+  };
+
+  const handleUpdateKitNotes = (assignmentId: string, notes: string) => {
+    setKitAssignments(kitAssignments.map(a =>
+      a.id === assignmentId ? { ...a, notes } : a
+    ));
+  };
+
+  const handleOpenKitDetails = (assignment: any) => {
+    setShowKitDetails(assignment);
   };
 
   const onSubmit = async (data: FormData) => {
@@ -1143,7 +1225,7 @@ export default function CreateGigScreen({
               <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm text-amber-900">
-                  <strong>Private to your organization:</strong> Staff assignments, bids, financial information, tags, and notes are only visible to members of your organization.
+                  <strong>Private to your organization:</strong> Staff assignments, bids, financial information, equipment assignments, tags, and notes are only visible to members of your organization.
                 </p>
               </div>
             </div>
@@ -1459,6 +1541,96 @@ export default function CreateGigScreen({
               </div>
             </Card>
 
+            {/* Equipment */}
+            <Card className="p-6 sm:p-8 mb-6">
+              <div className="flex items-center gap-2 mb-6">
+                <Package className="w-5 h-5 text-gray-600" />
+                <h3 className="text-gray-900">Equipment</h3>
+              </div>
+
+              <div className="space-y-4">
+                {/* Kit Assignments Table */}
+                {kitAssignments.length > 0 ? (
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Tag #</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead className="text-right">Rental Value</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {kitAssignments.map((assignment) => (
+                          <TableRow key={assignment.id}>
+                            <TableCell>{assignment.kit?.name || 'Unknown Kit'}</TableCell>
+                            <TableCell>{assignment.kit?.tag_number || '-'}</TableCell>
+                            <TableCell>{assignment.kit?.category || '-'}</TableCell>
+                            <TableCell className="text-right">
+                              {assignment.kit?.rental_value 
+                                ? `$${parseFloat(assignment.kit.rental_value).toFixed(2)}` 
+                                : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenKitDetails(assignment)}
+                                  disabled={isSubmitting}
+                                >
+                                  <Info className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveKit(assignment.id)}
+                                  disabled={isSubmitting}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No equipment assigned yet</p>
+                )}
+
+                {/* Add Kit */}
+                <div className="flex items-center gap-2">
+                  <Select
+                    onValueChange={handleAssignKit}
+                    disabled={isSubmitting || availableKits.length === 0}
+                  >
+                    <SelectTrigger className="w-64">
+                      <SelectValue placeholder="Select kit to assign..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableKits
+                        .filter(kit => !kitAssignments.some(a => a.kit_id === kit.id))
+                        .map((kit) => (
+                          <SelectItem key={kit.id} value={kit.id}>
+                            {kit.name} {kit.tag_number && `(${kit.tag_number})`}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {availableKits.length === 0 && (
+                    <span className="text-sm text-gray-500">No kits available</span>
+                  )}
+                </div>
+              </div>
+            </Card>
+
             {/* Tags & Notes */}
             <Card className="p-6 sm:p-8 mb-6">
               <div className="flex items-center gap-2 mb-6">
@@ -1654,6 +1826,118 @@ export default function CreateGigScreen({
             </Button>
             <Button onClick={handleSaveBidNotes}>
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Kit Details Dialog */}
+      <Dialog open={!!showKitDetails} onOpenChange={() => setShowKitDetails(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Kit Details</DialogTitle>
+            <DialogDescription>
+              Detailed information about the assigned kit
+            </DialogDescription>
+          </DialogHeader>
+          
+          {showKitDetails && (
+            <div className="space-y-6">
+              {/* Kit Information */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-gray-600">Kit Name</Label>
+                  <p className="mt-1">{showKitDetails.kit?.name || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">Tag Number</Label>
+                  <p className="mt-1">{showKitDetails.kit?.tag_number || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">Category</Label>
+                  <p className="mt-1">{showKitDetails.kit?.category || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">Rental Value</Label>
+                  <p className="mt-1">
+                    {showKitDetails.kit?.rental_value 
+                      ? `$${parseFloat(showKitDetails.kit.rental_value).toFixed(2)}` 
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">Replacement Value</Label>
+                  <p className="mt-1">
+                    {showKitDetails.kit?.replacement_value 
+                      ? `$${parseFloat(showKitDetails.kit.replacement_value).toFixed(2)}` 
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">Assigned At</Label>
+                  <p className="mt-1">
+                    {showKitDetails.assigned_at 
+                      ? format(new Date(showKitDetails.assigned_at), 'MMM d, yyyy h:mm a')
+                      : '-'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Kit Description */}
+              {showKitDetails.kit?.description && (
+                <div>
+                  <Label className="text-xs text-gray-600">Description</Label>
+                  <p className="mt-1 text-sm text-gray-700">{showKitDetails.kit.description}</p>
+                </div>
+              )}
+
+              {/* Kit Assets */}
+              {showKitDetails.kit?.kit_assets && showKitDetails.kit.kit_assets.length > 0 && (
+                <div>
+                  <Label className="text-xs text-gray-600 mb-2 block">Assets in this Kit</Label>
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Asset Name</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead className="text-right">Quantity</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {showKitDetails.kit.kit_assets.map((ka: any) => (
+                          <TableRow key={ka.asset?.id || Math.random()}>
+                            <TableCell>{ka.asset?.name || 'Unknown'}</TableCell>
+                            <TableCell>{ka.asset?.category || '-'}</TableCell>
+                            <TableCell className="text-right">{ka.quantity || 1}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {/* Assignment Notes */}
+              <div>
+                <Label className="text-xs text-gray-600">Assignment Notes</Label>
+                <Textarea
+                  value={showKitDetails.notes || ''}
+                  onChange={(e) => {
+                    setShowKitDetails({ ...showKitDetails, notes: e.target.value });
+                    handleUpdateKitNotes(showKitDetails.id, e.target.value);
+                  }}
+                  placeholder="Add notes for this assignment..."
+                  rows={3}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button onClick={() => setShowKitDetails(null)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
