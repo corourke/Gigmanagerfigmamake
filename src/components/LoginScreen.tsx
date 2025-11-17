@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Building2, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
-import { getUserProfile, createUserProfile, getUserOrganizations } from '../utils/api';
+import { getUserProfile, createUserProfile, getUserOrganizations, convertPendingToActive } from '../utils/api';
 import type { User, OrganizationMembership } from '../App';
 import { MOCK_USER, MOCK_ORGANIZATIONS } from '../utils/mock-data';
 import { Button } from './ui/button';
@@ -56,6 +56,19 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
       console.log('=== AUTHENTICATING USER ===');
       console.log('User ID:', userId);
 
+      // Get user metadata from Supabase auth
+      const supabase = createClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const userEmail = authUser?.email || email;
+
+      // Check if there's a pending user with this email and convert to active
+      if (userEmail) {
+        const convertedUser = await convertPendingToActive(userEmail, userId);
+        if (convertedUser) {
+          console.log('Converted pending user to active:', convertedUser);
+        }
+      }
+
       // Fetch or create user profile using direct Supabase client
       let userProfile = await getUserProfile(userId);
 
@@ -63,16 +76,12 @@ export default function LoginScreen({ onLogin, useMockData = false }: LoginScree
         // User doesn't exist, create profile
         console.log('User profile not found, creating new profile...');
         
-        // Get user metadata from Supabase auth
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        
         userProfile = await createUserProfile({
           id: userId,
-          email: user?.email || email,
-          first_name: firstName || user?.user_metadata?.first_name || 'User',
-          last_name: lastName || user?.user_metadata?.last_name || '',
-          avatar_url: user?.user_metadata?.avatar_url || user?.user_metadata?.picture,
+          email: userEmail,
+          first_name: firstName || authUser?.user_metadata?.first_name || 'User',
+          last_name: lastName || authUser?.user_metadata?.last_name || '',
+          avatar_url: authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture,
         });
         
         console.log('User profile created successfully');

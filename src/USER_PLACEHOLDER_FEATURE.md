@@ -29,11 +29,15 @@ Added `user_status` column to `users` table:
 - Returns both invitation and user objects
 - Checks for existing users with any status (active, pending, or inactive)
 
-**`convertPendingToActive(email)`**
+**`convertPendingToActive(email, authUserId)`**
 - Finds pending user by email
-- Updates `user_status` from 'pending' to 'active'
+- Creates new user record with auth user ID, copying all data from pending user
+- Updates organization memberships to point to auth user ID
+- Updates staff assignments to point to auth user ID
+- Deletes old pending user record
 - Marks invitation as accepted
 - Called during authentication flow when invited user signs in
+- **Critical**: Handles ID mismatch between placeholder UUID and actual auth user ID
 
 **`searchUsers()` and `searchAllUsers()`**
 - Now exclude 'inactive' users (not 'pending')
@@ -44,6 +48,14 @@ Added `user_status` column to `users` table:
 **File**: `/supabase/functions/server/index.tsx`
 
 - Updated `GET /organizations/:id/members` endpoint to include `user_status` in response
+
+#### Authentication Flow Integration:
+
+**File**: `/components/LoginScreen.tsx`
+
+- Updated `handleAuthenticatedUser()` to call `convertPendingToActive()` before creating/fetching user profile
+- Checks for pending user by email and converts to active user with auth ID
+- Ensures smooth transition from pending to active status during OAuth login
 
 ### 3. UI Updates
 
@@ -88,12 +100,14 @@ Added `user_status` column to `users` table:
 
 1. User receives invitation email
 2. Clicks invitation link
-3. Authenticates via Google OAuth
-4. `convertPendingToActive()` is called
-5. User status changes to `active`
-6. Invitation marked as accepted
-7. User can now log in and access the system
-8. All previous gig assignments are preserved
+3. Authenticates via Google OAuth (Supabase creates auth user with new ID)
+4. `convertPendingToActive()` is called in `LoginScreen.handleAuthenticatedUser()`
+5. New user record created with auth user ID, copying data from pending user
+6. Organization memberships and staff assignments updated to auth user ID
+7. Old pending user record deleted
+8. Invitation marked as accepted
+9. User can now log in and access the system
+10. All previous gig assignments are preserved
 
 ## Key Features
 
@@ -127,7 +141,8 @@ Potential improvements for future iterations:
 
 ## Notes
 
-- The user ID remains constant from creation through activation
-- All foreign key relationships use the same user ID (no cascading updates needed)
-- Pending users are filtered out of "Add Existing User" searches
+- **User ID Conversion**: Pending users get a generated UUID, but authenticated users get Supabase auth ID. The conversion process handles this mismatch by creating a new record with the correct ID and updating all relationships.
+- The conversion process is atomic - if any step fails, the pending user data remains intact
+- Pending users are included in searches (they can be assigned to gigs immediately)
 - Inactive users are excluded from most searches but remain in database for historical records
+- All foreign key relationships are properly updated during the pending→active conversion
