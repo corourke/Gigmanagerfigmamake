@@ -1623,10 +1623,15 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
   // Delete slots that are no longer in the list (cascades to assignments)
   const slotIdsToDelete = existingSlotIds.filter(id => !incomingSlotIds.includes(id));
   if (slotIdsToDelete.length > 0) {
-    await supabase
+    const { error: deleteError } = await supabase
       .from('gig_staff_slots')
       .delete()
       .in('id', slotIdsToDelete);
+    
+    if (deleteError) {
+      console.error('Error deleting staff slots:', deleteError);
+      throw deleteError;
+    }
   }
 
   // Update or insert staff slots
@@ -1634,20 +1639,30 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
     // Get or create staff role
     let staffRoleId: string | null = null;
     
-    const { data: existingRole } = await supabase
+    const { data: existingRole, error: roleError } = await supabase
       .from('staff_roles')
       .select('id')
       .eq('name', slot.role)
       .maybeSingle();
 
+    if (roleError) {
+      console.error('Error fetching staff role:', roleError);
+      throw roleError;
+    }
+
     if (existingRole?.id) {
       staffRoleId = existingRole.id;
     } else {
-      const { data: newRole } = await supabase
+      const { data: newRole, error: newRoleError } = await supabase
         .from('staff_roles')
         .insert({ name: slot.role })
         .select('id')
         .single();
+      
+      if (newRoleError) {
+        console.error('Error creating staff role:', newRoleError);
+        throw newRoleError;
+      }
       
       staffRoleId = newRole?.id || null;
     }
@@ -1658,7 +1673,7 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
 
     if (slot.id && existingSlotIds.includes(slot.id)) {
       // Update existing slot
-      await supabase
+      const { error: updateError } = await supabase
         .from('gig_staff_slots')
         .update({
           staff_role_id: staffRoleId,
@@ -1667,9 +1682,14 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
           notes: slot.notes || null,
         })
         .eq('id', slot.id);
+      
+      if (updateError) {
+        console.error('Error updating staff slot:', updateError);
+        throw updateError;
+      }
     } else if (slot.role) {
       // Insert new slot
-      const { data: newSlot } = await supabase
+      const { data: newSlot, error: insertError } = await supabase
         .from('gig_staff_slots')
         .insert({
           gig_id: gigId,
@@ -1681,6 +1701,11 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
         .select('id')
         .single();
       
+      if (insertError) {
+        console.error('Error creating staff slot:', insertError);
+        throw insertError;
+      }
+      
       slotId = newSlot?.id;
     }
 
@@ -1689,10 +1714,15 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
     // Handle assignments for this slot
     if (slot.assignments && slot.assignments.length > 0) {
       // Get existing assignments for this slot
-      const { data: existingAssignments } = await supabase
+      const { data: existingAssignments, error: assignError } = await supabase
         .from('gig_staff_assignments')
         .select('id')
         .eq('slot_id', slotId);
+
+      if (assignError) {
+        console.error('Error fetching existing assignments:', assignError);
+        throw assignError;
+      }
 
       const existingAssignmentIds = existingAssignments?.map(a => a.id) || [];
       const incomingAssignmentIds = slot.assignments.filter(a => a.id).map(a => a.id!);
@@ -1700,17 +1730,22 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
       // Delete assignments that are no longer in the list
       const assignmentIdsToDelete = existingAssignmentIds.filter(id => !incomingAssignmentIds.includes(id));
       if (assignmentIdsToDelete.length > 0) {
-        await supabase
+        const { error: deleteAssignError } = await supabase
           .from('gig_staff_assignments')
           .delete()
           .in('id', assignmentIdsToDelete);
+        
+        if (deleteAssignError) {
+          console.error('Error deleting staff assignments:', deleteAssignError);
+          throw deleteAssignError;
+        }
       }
 
       // Update or insert assignments
       for (const assignment of slot.assignments) {
         if (assignment.id && existingAssignmentIds.includes(assignment.id)) {
           // Update existing assignment
-          await supabase
+          const { error: updateAssignError } = await supabase
             .from('gig_staff_assignments')
             .update({
               user_id: assignment.user_id,
@@ -1720,9 +1755,14 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
               notes: assignment.notes || null,
             })
             .eq('id', assignment.id);
+          
+          if (updateAssignError) {
+            console.error('Error updating staff assignment:', updateAssignError);
+            throw updateAssignError;
+          }
         } else if (assignment.user_id) {
           // Insert new assignment
-          await supabase
+          const { error: insertAssignError } = await supabase
             .from('gig_staff_assignments')
             .insert({
               slot_id: slotId,
@@ -1732,14 +1772,24 @@ export async function updateGigStaffSlots(gigId: string, staff_slots: Array<{
               fee: assignment.fee || null,
               notes: assignment.notes || null,
             });
+          
+          if (insertAssignError) {
+            console.error('Error creating staff assignment:', insertAssignError);
+            throw insertAssignError;
+          }
         }
       }
     } else {
       // Delete all assignments for this slot if none provided
-      await supabase
+      const { error: deleteAllError } = await supabase
         .from('gig_staff_assignments')
         .delete()
         .eq('slot_id', slotId);
+      
+      if (deleteAllError) {
+        console.error('Error deleting all assignments for slot:', deleteAllError);
+        throw deleteAllError;
+      }
     }
   }
 

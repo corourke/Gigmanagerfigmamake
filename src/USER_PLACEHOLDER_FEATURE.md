@@ -6,14 +6,24 @@ The User Placeholder feature allows administrators to create user records immedi
 
 ## Implementation Components
 
-### 1. Database Schema
+### 1. Database Schema Changes
 
-**Migration**: `/supabase/migrations/20240118000000_add_user_status.sql`
+#### Migration: `20240118000000_add_user_status.sql`
 
-Added `user_status` column to `users` table:
-- `active` - Authenticated user (default)
-- `pending` - Invited but not yet authenticated
-- `inactive` - Disabled account
+**Critical Change**: Drops `users.id → auth.users(id)` foreign key constraint
+- The original schema enforced that every `users.id` must exist in `auth.users`
+- This prevented creating pending user records (no auth record exists yet)
+- Dropping this constraint allows pending users with placeholder UUIDs
+- When user authenticates, their ID is updated to match their `auth.users.id`
+
+**Added Column**: `user_status` (TEXT)
+- Values: `'active'`, `'pending'`, `'inactive'`
+- Default: `'active'`
+- Constraint: CHECK ensures only valid values
+
+**Added Foreign Key Cascades**:
+- All foreign keys referencing `users(id)` now have `ON UPDATE CASCADE`
+- When pending user ID is updated to auth user ID, all relationships update automatically
 
 ### 2. API Functions
 

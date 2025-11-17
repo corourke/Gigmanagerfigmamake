@@ -1,6 +1,12 @@
 -- Add user_status column to users table for pending user placeholders
 -- This allows creating user records before authentication is complete
 
+-- First, drop the foreign key constraint to auth.users
+-- This is necessary because pending users don't have auth.users records yet
+ALTER TABLE users 
+  DROP CONSTRAINT users_id_fkey;
+
+-- Add the user_status column
 ALTER TABLE users 
 ADD COLUMN user_status TEXT DEFAULT 'active' 
 CHECK (user_status IN ('active', 'inactive', 'pending'));

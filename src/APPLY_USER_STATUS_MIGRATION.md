@@ -10,22 +10,38 @@ The migration is located at: `/supabase/migrations/20240118000000_add_user_statu
 
 ## What This Migration Does
 
-1. Adds `user_status` column to `users` table with three possible values:
+1. **Drops the foreign key constraint** from `users.id` to `auth.users(id)`:
+   - This is necessary to allow creating pending user records before authentication
+   - Pending users get a generated UUID that doesn't exist in `auth.users` yet
+   - When the user authenticates, their ID is updated to match `auth.users.id`
+
+2. Adds `user_status` column to `users` table with three possible values:
    - `active` (default) - Authenticated, active user
    - `pending` - Invited user who hasn't authenticated yet (placeholder)
    - `inactive` - Disabled user account
 
-2. Creates indexes for efficient querying:
+3. Creates indexes for efficient querying:
    - Index on `user_status` column
    - Index on `email` for pending users
 
-3. Adds `ON UPDATE CASCADE` to foreign key constraints:
+4. Adds `ON UPDATE CASCADE` to foreign key constraints:
    - `organization_members.user_id` → `users(id)`
    - `gig_staff_assignments.user_id` → `users(id)`
    - `invitations.invited_by` → `users(id)`
    - `invitations.accepted_by` → `users(id)`
    
    This allows the user ID to be updated when converting pending users to active users, and all related records automatically update.
+
+## Security Implications
+
+**Dropping `users.id → auth.users(id)` foreign key**:
+- ⚠️ The `users` table is no longer strictly tied to `auth.users`
+- This is intentional to support pending user placeholders
+- Application code must ensure:
+  - Active users always have valid `auth.users` records
+  - Pending users are converted to active with proper auth IDs
+  - No orphaned user records remain without auth backing
+- The `user_status` field tracks which users have auth records ('active') vs placeholders ('pending')
 
 ## How to Apply
 
