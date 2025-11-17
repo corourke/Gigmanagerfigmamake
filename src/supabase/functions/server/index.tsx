@@ -721,7 +721,8 @@ Deno.serve(async (req) => {
             city,
             state,
             postal_code,
-            country
+            country,
+            user_status
           )
         `)
         .eq('organization_id', orgId)

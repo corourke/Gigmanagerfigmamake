@@ -124,11 +124,12 @@ export async function searchUsers(search?: string, organizationIds?: string[]) {
     return [];
   }
 
-  // Only search users in the specified organizations
+  // Only search users in the specified organizations (exclude pending users)
   let query = supabase
     .from('users')
     .select('*')
     .in('id', userIds)
+    .neq('user_status', 'pending')
     .order('first_name');
 
   if (search) {
@@ -367,11 +368,12 @@ export async function searchAllUsers(search: string) {
     return [];
   }
 
-  // Search all users in the system
+  // Search all users in the system (exclude pending users)
   const { data, error } = await supabase
     .from('users')
     .select('*')
     .or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`)
+    .neq('user_status', 'pending')
     .order('first_name')
     .limit(20);
 
@@ -434,21 +436,27 @@ export async function addExistingUserToOrganization(
 export async function inviteUserToOrganization(
   organizationId: string,
   email: string,
-  role: 'Admin' | 'Manager' | 'Member'
+  role: 'Admin' | 'Manager' | 'Member',
+  firstName?: string,
+  lastName?: string
 ) {
   const supabase = getSupabase();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Not authenticated');
 
-  // Check if user already exists in the system
+  // Check if user already exists in the system (active or pending)
   const { data: existingUser } = await supabase
     .from('users')
-    .select('id')
+    .select('id, user_status')
     .eq('email', email)
     .maybeSingle();
 
-  if (existingUser) {
+  if (existingUser && existingUser.user_status === 'active') {
     throw new Error('A user with this email already exists. Please use "Add Existing User" instead.');
+  }
+
+  if (existingUser && existingUser.user_status === 'pending') {
+    throw new Error('An invitation has already been sent to this email address');
   }
 
   // Check if there's already a pending invitation
@@ -469,13 +477,48 @@ export async function inviteUserToOrganization(
     throw new Error('An invitation has already been sent to this email address');
   }
 
+  // Create placeholder user record with pending status
+  const userId = crypto.randomUUID();
+  const { data: newUser, error: userError } = await supabase
+    .from('users')
+    .insert({
+      id: userId,
+      email,
+      first_name: firstName || null,
+      last_name: lastName || null,
+      user_status: 'pending',
+    })
+    .select()
+    .single();
+
+  if (userError) {
+    console.error('Error creating pending user:', userError);
+    throw new Error('Failed to create user placeholder: ' + userError.message);
+  }
+
+  // Add user to organization
+  const { error: memberError } = await supabase
+    .from('organization_members')
+    .insert({
+      organization_id: organizationId,
+      user_id: userId,
+      role,
+    });
+
+  if (memberError) {
+    console.error('Error adding user to organization:', memberError);
+    // Clean up the created user
+    await supabase.from('users').delete().eq('id', userId);
+    throw new Error('Failed to add user to organization: ' + memberError.message);
+  }
+
   // Generate invitation token
   const token = crypto.randomUUID();
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
 
   // Create invitation
-  const { data, error } = await supabase
+  const { data: invitation, error } = await supabase
     .from('invitations')
     .insert({
       organization_id: organizationId,
@@ -492,6 +535,10 @@ export async function inviteUserToOrganization(
   if (error) {
     console.error('Error creating invitation:', error);
     
+    // Clean up the created user and membership
+    await supabase.from('organization_members').delete().eq('user_id', userId);
+    await supabase.from('users').delete().eq('id', userId);
+    
     // Better error message if table doesn't exist
     if (error.code === 'PGRST205' || error.message.includes('Could not find')) {
       throw new Error('The invitations table has not been created yet. Please run the migration from APPLY_INVITATIONS_TABLE.md');
@@ -500,7 +547,7 @@ export async function inviteUserToOrganization(
     throw error;
   }
 
-  return data;
+  return { invitation, user: newUser };
 }
 
 export async function getOrganizationInvitations(organizationId: string) {
@@ -553,6 +600,84 @@ export async function cancelInvitation(invitationId: string) {
   }
 
   return { success: true };
+}
+
+export async function convertPendingToActive(email: string, authUserId: string) {
+  const supabase = getSupabase();
+  
+  // Find the pending user by email
+  const { data: pendingUser, error: findError } = await supabase
+    .from('users')
+    .select('id, user_status')
+    .eq('email', email)
+    .eq('user_status', 'pending')
+    .maybeSingle();
+
+  if (findError) {
+    console.error('Error finding pending user:', findError);
+    throw findError;
+  }
+
+  if (!pendingUser) {
+    // No pending user found - this is normal for users who weren't invited
+    return null;
+  }
+
+  // Update the user record to active status and link to auth user
+  const { data: updatedUser, error: updateError } = await supabase
+    .from('users')
+    .update({
+      id: authUserId, // Update to match the auth user ID
+      user_status: 'active',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', pendingUser.id)
+    .select()
+    .single();
+
+  if (updateError) {
+    console.error('Error converting pending user to active:', updateError);
+    throw updateError;
+  }
+
+  // Update organization memberships to point to the new user ID
+  const { error: memberError } = await supabase
+    .from('organization_members')
+    .update({ user_id: authUserId })
+    .eq('user_id', pendingUser.id);
+
+  if (memberError) {
+    console.error('Error updating organization memberships:', memberError);
+    throw memberError;
+  }
+
+  // Update any staff assignments to point to the new user ID
+  const { error: staffError } = await supabase
+    .from('gig_staff_assignments')
+    .update({ user_id: authUserId })
+    .eq('user_id', pendingUser.id);
+
+  if (staffError) {
+    console.error('Error updating staff assignments:', staffError);
+    // Don't throw - staff assignments might not exist
+  }
+
+  // Mark any pending invitations as accepted
+  const { error: inviteError } = await supabase
+    .from('invitations')
+    .update({ 
+      status: 'accepted',
+      accepted_at: new Date().toISOString(),
+    })
+    .eq('email', email)
+    .eq('status', 'pending');
+
+  if (inviteError) {
+    console.error('Error updating invitation status:', inviteError);
+    // Don't throw - invitation might not exist
+  }
+
+  return updatedUser;
 }
 
 // ===== Staff Roles Management =====
