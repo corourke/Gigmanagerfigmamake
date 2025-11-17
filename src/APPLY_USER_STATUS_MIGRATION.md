@@ -19,6 +19,14 @@ The migration is located at: `/supabase/migrations/20240118000000_add_user_statu
    - Index on `user_status` column
    - Index on `email` for pending users
 
+3. Adds `ON UPDATE CASCADE` to foreign key constraints:
+   - `organization_members.user_id` → `users(id)`
+   - `gig_staff_assignments.user_id` → `users(id)`
+   - `invitations.invited_by` → `users(id)`
+   - `invitations.accepted_by` → `users(id)`
+   
+   This allows the user ID to be updated when converting pending users to active users, and all related records automatically update.
+
 ## How to Apply
 
 ### Option 1: Supabase Dashboard (Recommended)

@@ -612,7 +612,7 @@ export async function convertPendingToActive(email: string, authUserId: string) 
   // Find the pending user by email
   const { data: pendingUser, error: findError } = await supabase
     .from('users')
-    .select('*')
+    .select('id, user_status')
     .eq('email', email)
     .eq('user_status', 'pending')
     .maybeSingle();
@@ -627,65 +627,22 @@ export async function convertPendingToActive(email: string, authUserId: string) 
     return null;
   }
 
-  const oldUserId = pendingUser.id;
-
-  // Create new user record with auth user ID, copying all data from pending user
-  const { data: newUser, error: createError } = await supabase
+  // Update the user ID to match auth user ID and set status to active
+  // This will automatically update all related records if foreign keys have ON UPDATE CASCADE
+  const { data: updatedUser, error: updateError } = await supabase
     .from('users')
-    .insert({
+    .update({
       id: authUserId,
-      email: pendingUser.email,
-      first_name: pendingUser.first_name,
-      last_name: pendingUser.last_name,
-      phone: pendingUser.phone,
-      avatar_url: pendingUser.avatar_url,
-      address_line1: pendingUser.address_line1,
-      address_line2: pendingUser.address_line2,
-      city: pendingUser.city,
-      state: pendingUser.state,
-      postal_code: pendingUser.postal_code,
-      country: pendingUser.country,
       user_status: 'active',
+      updated_at: new Date().toISOString(),
     })
+    .eq('id', pendingUser.id)
     .select()
     .single();
 
-  if (createError) {
-    console.error('Error creating active user record:', createError);
-    throw createError;
-  }
-
-  // Update organization memberships to point to the auth user ID
-  const { error: memberError } = await supabase
-    .from('organization_members')
-    .update({ user_id: authUserId })
-    .eq('user_id', oldUserId);
-
-  if (memberError) {
-    console.error('Error updating organization memberships:', memberError);
-    throw memberError;
-  }
-
-  // Update any staff assignments to point to the auth user ID
-  const { error: staffError } = await supabase
-    .from('gig_staff_assignments')
-    .update({ user_id: authUserId })
-    .eq('user_id', oldUserId);
-
-  if (staffError) {
-    console.error('Error updating staff assignments:', staffError);
-    // Don't throw - staff assignments might not exist
-  }
-
-  // Delete the old pending user record
-  const { error: deleteError } = await supabase
-    .from('users')
-    .delete()
-    .eq('id', oldUserId);
-
-  if (deleteError) {
-    console.error('Error deleting old pending user record:', deleteError);
-    // Don't throw - the new record is already created and relationships updated
+  if (updateError) {
+    console.error('Error converting pending user to active:', updateError);
+    throw updateError;
   }
 
   // Mark any pending invitations as accepted
@@ -703,7 +660,7 @@ export async function convertPendingToActive(email: string, authUserId: string) 
     // Don't throw - invitation might not exist
   }
 
-  return newUser;
+  return updatedUser;
 }
 
 // ===== Staff Roles Management =====

@@ -31,13 +31,11 @@ Added `user_status` column to `users` table:
 
 **`convertPendingToActive(email, authUserId)`**
 - Finds pending user by email
-- Creates new user record with auth user ID, copying all data from pending user
-- Updates organization memberships to point to auth user ID
-- Updates staff assignments to point to auth user ID
-- Deletes old pending user record
+- Updates user ID from placeholder UUID to auth user ID
+- Sets user_status to 'active'
 - Marks invitation as accepted
 - Called during authentication flow when invited user signs in
-- **Critical**: Handles ID mismatch between placeholder UUID and actual auth user ID
+- **Critical**: Foreign keys with ON UPDATE CASCADE automatically update all related records
 
 **`searchUsers()` and `searchAllUsers()`**
 - Now exclude 'inactive' users (not 'pending')
@@ -102,9 +100,9 @@ Added `user_status` column to `users` table:
 2. Clicks invitation link
 3. Authenticates via Google OAuth (Supabase creates auth user with new ID)
 4. `convertPendingToActive()` is called in `LoginScreen.handleAuthenticatedUser()`
-5. New user record created with auth user ID, copying data from pending user
-6. Organization memberships and staff assignments updated to auth user ID
-7. Old pending user record deleted
+5. User ID is updated from placeholder UUID to auth user ID
+6. User status changes to 'active'
+7. Foreign key CASCADE automatically updates organization_members and gig_staff_assignments
 8. Invitation marked as accepted
 9. User can now log in and access the system
 10. All previous gig assignments are preserved
@@ -114,8 +112,9 @@ Added `user_status` column to `users` table:
 ✅ **Immediate Assignment** - Pending users can be assigned to gigs right away
 ✅ **Visual Status** - Clear "Pending" badge shows users who haven't authenticated
 ✅ **No Duplicates** - Prevents duplicate emails across all user statuses
-✅ **Graceful Conversion** - Smooth transition from pending to active
-✅ **Preserved Relationships** - All staffing assignments remain intact
+✅ **Graceful Conversion** - Simple single UPDATE operation converts pending to active
+✅ **Preserved Relationships** - CASCADE constraints automatically update all related records
+✅ **Atomic Operation** - ID conversion happens in one database transaction
 
 ## Testing Checklist
 
@@ -141,8 +140,8 @@ Potential improvements for future iterations:
 
 ## Notes
 
-- **User ID Conversion**: Pending users get a generated UUID, but authenticated users get Supabase auth ID. The conversion process handles this mismatch by creating a new record with the correct ID and updating all relationships.
-- The conversion process is atomic - if any step fails, the pending user data remains intact
+- **User ID Conversion**: Pending users get a generated UUID, but authenticated users get Supabase auth ID. The conversion simply updates the user.id field, and foreign key CASCADE constraints handle all related table updates automatically.
+- The conversion is a single atomic UPDATE operation - clean and simple
 - Pending users are included in searches (they can be assigned to gigs immediately)
 - Inactive users are excluded from most searches but remain in database for historical records
-- All foreign key relationships are properly updated during the pending→active conversion
+- ON UPDATE CASCADE on foreign keys ensures all relationships update automatically when user ID changes
