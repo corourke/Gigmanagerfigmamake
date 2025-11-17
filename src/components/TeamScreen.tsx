@@ -96,6 +96,7 @@ interface OrganizationMember {
     state?: string;
     postal_code?: string;
     country?: string;
+    user_status?: string;
     last_sign_in_at?: string | null;
   };
 }
@@ -143,6 +144,8 @@ export default function TeamScreen({
   const [selectedUserRole, setSelectedUserRole] = useState<UserRole>('Staff');
   
   // Add member - invite new
+  const [inviteFirstName, setInviteFirstName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<UserRole>('Staff');
   
@@ -261,18 +264,33 @@ export default function TeamScreen({
 
     setIsSubmitting(true);
     try {
-      const invitation = await inviteUserToOrganization(organization.id, inviteEmail, inviteRole);
-      setInvitations([...invitations, invitation]);
+      const result = await inviteUserToOrganization(
+        organization.id, 
+        inviteEmail, 
+        inviteRole,
+        inviteFirstName || undefined,
+        inviteLastName || undefined
+      );
+      
+      // Add invitation to list
+      setInvitations([...invitations, result.invitation]);
+      
+      // Reload members to show the new pending user
+      await loadData();
+      
       setShowAddDialog(false);
+      setInviteFirstName('');
+      setInviteLastName('');
       setInviteEmail('');
       setInviteRole('Staff');
       
       // Show placeholder message about the invitation
       toast.success(
         <div className="space-y-2">
-          <p className="font-medium">Invitation created!</p>
+          <p className="font-medium">User created and invitation sent!</p>
           <p className="text-sm text-gray-600">
             In production, an email would be sent to {inviteEmail} with a link to accept the invitation.
+            The user can now be assigned to gigs.
           </p>
         </div>,
         { duration: 5000 }
@@ -496,12 +514,19 @@ export default function TeamScreen({
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="text-sm text-gray-600">
-                            {member.user.last_sign_in_at 
-                              ? format(new Date(member.user.last_sign_in_at), 'MMM d, yyyy h:mm a')
-                              : 'Never'
-                            }
-                          </div>
+                          {member.user.user_status === 'pending' ? (
+                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300">
+                              <Clock className="w-3 h-3 mr-1" />
+                              Pending
+                            </Badge>
+                          ) : (
+                            <div className="text-sm text-gray-600">
+                              {member.user.last_sign_in_at 
+                                ? format(new Date(member.user.last_sign_in_at), 'MMM d, yyyy h:mm a')
+                                : 'Never'
+                              }
+                            </div>
+                          )}
                         </TableCell>
                         {canManageTeam && (
                           <TableCell className="text-right">
@@ -745,8 +770,29 @@ export default function TeamScreen({
               <div className="space-y-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> In production, an invitation email will be sent to the user with a link to accept and set up their account.
+                    <strong>Note:</strong> The user will be created immediately and can be assigned to gigs. In production, an invitation email will be sent to the user with a link to accept and set up their account.
                   </p>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="invite_first_name">First Name</Label>
+                    <Input
+                      id="invite_first_name"
+                      placeholder="John"
+                      value={inviteFirstName}
+                      onChange={(e) => setInviteFirstName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="invite_last_name">Last Name</Label>
+                    <Input
+                      id="invite_last_name"
+                      placeholder="Doe"
+                      value={inviteLastName}
+                      onChange={(e) => setInviteLastName(e.target.value)}
+                    />
+                  </div>
                 </div>
                 
                 <div className="space-y-2">
@@ -808,6 +854,8 @@ export default function TeamScreen({
                   variant="outline"
                   onClick={() => {
                     setShowAddDialog(false);
+                    setInviteFirstName('');
+                    setInviteLastName('');
                     setInviteEmail('');
                     setInviteRole('Staff');
                   }}
