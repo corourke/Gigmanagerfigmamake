@@ -71,8 +71,6 @@ import { createClient } from '../utils/supabase/client';
 import { projectId } from '../utils/supabase/info';
 import { getGig, updateGig, createGig, deleteGig, createGigBid, updateGigBid, deleteGigBid, getGigKits, assignKitToGig, removeKitFromGig, getKits } from '../utils/api';
 
-const supabase = createClient();
-
 type GigStatus = 'DateHold' | 'Proposed' | 'Booked' | 'Completed' | 'Cancelled' | 'Settled';
 
 interface CreateGigScreenProps {
@@ -285,6 +283,7 @@ export default function CreateGigScreen({
   const loadStaffRoles = async () => {
     setIsLoadingRoles(true);
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
         setIsLoadingRoles(false);
@@ -322,6 +321,8 @@ export default function CreateGigScreen({
 
     setIsLoading(true);
     try {
+      const supabase = createClient();
+      
       // Use the API function instead of Edge Function
       const gig = await getGig(gigId);
 
@@ -713,6 +714,7 @@ export default function CreateGigScreen({
     setGeneralError('');
 
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {

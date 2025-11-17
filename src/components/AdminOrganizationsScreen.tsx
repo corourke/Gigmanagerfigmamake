@@ -28,8 +28,6 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 
-const supabase = createClient();
-
 interface OrganizationWithMembers extends Organization {
   member_count?: number;
 }
@@ -60,6 +58,7 @@ export default function AdminOrganizationsScreen({
     setError(null);
 
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -125,6 +124,7 @@ export default function AdminOrganizationsScreen({
     setIsDeleting(true);
 
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {

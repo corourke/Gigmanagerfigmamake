@@ -20,8 +20,6 @@ import {
 } from './ui/select';
 import MarkdownEditor from './MarkdownEditor';
 
-const supabase = createClient();
-
 interface CreateOrganizationScreenProps {
   organization?: Organization; // If provided, we're in edit mode
   onOrganizationCreated: (org: Organization) => void;
@@ -190,8 +188,9 @@ export default function CreateOrganizationScreen({
       return;
     }
 
-    // Real API call to Google Places
+    // Real API call
     try {
+      // Get current session
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -458,6 +457,7 @@ export default function CreateOrganizationScreen({
     // Real API call
     try {
       // Get current session
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
