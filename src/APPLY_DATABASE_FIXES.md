@@ -180,6 +180,61 @@ ORDER BY tablename;
 
 ---
 
+## 📋 **Step 5: Fix Invitation Acceptance RLS Policy (NEW - Nov 2024)**
+
+**Problem:** Invited users (Staff/Viewer roles) cannot accept their own invitations due to restrictive RLS policy.
+
+**Solution:** Update the invitations table RLS policy to allow invited users to accept their own invitations.
+
+Copy and run the contents of `/supabase/migrations/20241118000000_fix_invitation_acceptance_rls.sql`:
+
+```sql
+-- Fix RLS policy to allow invited users to accept their own invitations
+DROP POLICY IF EXISTS "Admins and Managers can update invitations" ON invitations;
+
+CREATE POLICY "Admins and Managers can update invitations, users can accept their own"
+  ON invitations
+  FOR UPDATE
+  USING (
+    organization_id IN (
+      SELECT organization_id 
+      FROM organization_members 
+      WHERE user_id = auth.uid() 
+      AND role IN ('Admin', 'Manager')
+    )
+    OR 
+    email = (SELECT email FROM auth.users WHERE id = auth.uid())
+  )
+  WITH CHECK (
+    organization_id IN (
+      SELECT organization_id 
+      FROM organization_members 
+      WHERE user_id = auth.uid() 
+      AND role IN ('Admin', 'Manager')
+    )
+    OR 
+    email = (SELECT email FROM auth.users WHERE id = auth.uid())
+  );
+```
+
+**Verify the fix:**
+```sql
+-- Check that the policy was updated
+SELECT * FROM pg_policies 
+WHERE tablename = 'invitations' 
+AND policyname = 'Admins and Managers can update invitations, users can accept their own';
+```
+
+**Test the fix:**
+1. Create an invitation as Admin for a Staff or Viewer user
+2. Sign up/sign in with that email
+3. Verify invitation status updates to 'accepted'
+4. Check that `accepted_at` and `accepted_by` are populated
+
+See `/INVITATION_ACCEPTANCE_FIX.md` for detailed documentation.
+
+---
+
 ## ✅ **What These Changes Fix**
 
 | Issue | Root Cause | Fix |

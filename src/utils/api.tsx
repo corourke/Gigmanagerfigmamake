@@ -651,13 +651,14 @@ export async function convertPendingToActive(email: string, authUserId: string) 
     .update({ 
       status: 'accepted',
       accepted_at: new Date().toISOString(),
+      accepted_by: authUserId,  // Add this field
     })
     .eq('email', email)
     .eq('status', 'pending');
 
   if (inviteError) {
     console.error('Error updating invitation status:', inviteError);
-    // Don't throw - invitation might not exist
+    throw new Error(`Failed to accept invitation: ${inviteError.message}`);
   }
 
   return updatedUser;

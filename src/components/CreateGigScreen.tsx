@@ -374,11 +374,26 @@ export default function CreateGigScreen({
             notes: a.notes || '',
           }));
 
+          const requiredCount = s.required_count || 1;
+          
+          // Fill assignments to match required count if needed
+          while (assignments.length < requiredCount) {
+            assignments.push({
+              id: Math.random().toString(36).substr(2, 9),
+              user_id: '',
+              user_name: '',
+              status: 'Requested',
+              compensation_type: 'rate',
+              amount: '',
+              notes: '',
+            });
+          }
+
           return {
             id: s.id || Math.random().toString(36).substr(2, 9), // Use database ID
             organization_id: s.organization_id,
             role: s.staff_role?.name || '',
-            count: s.required_count || 1,
+            count: requiredCount,
             notes: s.notes || '',
             assignments,
           };
@@ -527,9 +542,38 @@ export default function CreateGigScreen({
   };
 
   const handleUpdateStaffSlot = (id: string, field: keyof Omit<StaffSlotData, 'assignments'>, value: string | number) => {
-    setStaffSlots(staffSlots.map(s => 
-      s.id === id ? { ...s, [field]: value } : s
-    ));
+    setStaffSlots(staffSlots.map(s => {
+      if (s.id === id) {
+        const updatedSlot = { ...s, [field]: value };
+        
+        // If count changed, adjust assignments array
+        if (field === 'count' && typeof value === 'number') {
+          const currentCount = s.assignments.length;
+          if (value > currentCount) {
+            // Add more assignments
+            const newAssignments = [...s.assignments];
+            for (let i = currentCount; i < value; i++) {
+              newAssignments.push({
+                id: Math.random().toString(36).substr(2, 9),
+                user_id: '',
+                user_name: '',
+                status: 'Requested',
+                compensation_type: 'rate',
+                amount: '',
+                notes: '',
+              });
+            }
+            updatedSlot.assignments = newAssignments;
+          } else if (value < currentCount) {
+            // Remove assignments from the end
+            updatedSlot.assignments = s.assignments.slice(0, value);
+          }
+        }
+        
+        return updatedSlot;
+      }
+      return s;
+    }));
   };
 
   const handleRemoveStaffSlot = (id: string) => {
@@ -1153,9 +1197,21 @@ export default function CreateGigScreen({
 
             {/* Participants */}
             <Card className="p-6 sm:p-8 mb-6">
-              <div className="flex items-center gap-2 mb-6">
-                <Building2 className="w-5 h-5 text-gray-600" />
-                <h3 className="text-gray-900">Participants</h3>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-gray-600" />
+                  <h3 className="text-gray-900">Participants</h3>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddParticipant}
+                  disabled={isSubmitting}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Participant
+                </Button>
               </div>
 
               <div className="space-y-4">
@@ -1252,16 +1308,6 @@ export default function CreateGigScreen({
                     </TableBody>
                   </Table>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddParticipant}
-                  disabled={isSubmitting}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Participant
-                </Button>
               </div>
             </Card>
 
@@ -1277,9 +1323,21 @@ export default function CreateGigScreen({
 
             {/* Staff Assignments */}
             <Card className="p-6 sm:p-8 mb-6">
-              <div className="flex items-center gap-2 mb-6">
-                <Users className="w-5 h-5 text-gray-600" />
-                <h3 className="text-gray-900">Staff Assignments</h3>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-gray-600" />
+                  <h3 className="text-gray-900">Staff Assignments</h3>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddStaffSlot}
+                  disabled={isSubmitting}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Staff Slot
+                </Button>
               </div>
 
               <div className="space-y-4">
@@ -1312,7 +1370,7 @@ export default function CreateGigScreen({
                             </SelectContent>
                           </Select>
                           <div className="flex items-center gap-2">
-                            <Label className="text-xs text-gray-600">Count:</Label>
+                            <Label className="text-xs text-gray-600">Required:</Label>
                             <Input
                               type="number"
                               min="1"
@@ -1347,125 +1405,103 @@ export default function CreateGigScreen({
 
                       {/* Assignments for this Slot */}
                       <div className="p-4">
-                        {slot.assignments.length > 0 ? (
-                          <div className="space-y-2 mb-3">
-                            {slot.assignments.map((assignment) => (
-                              <div
-                                key={assignment.id}
-                                className="flex items-center gap-2 p-2 bg-gray-50 rounded border border-gray-200"
-                              >
-                                <div className="flex-1">
-                                  <UserSelector
-                                    onSelect={(selectedUser) => {
-                                      const fullName = `${selectedUser.first_name} ${selectedUser.last_name}`.trim();
-                                      handleUpdateStaffAssignment(slot.id, assignment.id, 'user_id', selectedUser.id);
-                                      handleUpdateStaffAssignment(slot.id, assignment.id, 'user_name', fullName);
-                                    }}
-                                    placeholder="Search for user..."
-                                    disabled={isSubmitting}
-                                    value={assignment.user_name}
-                                    organizationIds={participants.map(p => p.organization_id).filter(id => id && id.trim() !== '')}
-                                  />
-                                </div>
-                                <Select
-                                  value={assignment.status}
-                                  onValueChange={(value) => handleUpdateStaffAssignment(slot.id, assignment.id, 'status', value)}
+                        <div className="space-y-2">
+                          {slot.assignments.map((assignment) => (
+                            <div
+                              key={assignment.id}
+                              className="flex items-center gap-2 p-2 bg-gray-50 rounded border border-gray-200"
+                            >
+                              <div className="flex-1">
+                                <UserSelector
+                                  onSelect={(selectedUser) => {
+                                    const fullName = `${selectedUser.first_name} ${selectedUser.last_name}`.trim();
+                                    handleUpdateStaffAssignment(slot.id, assignment.id, 'user_id', selectedUser.id);
+                                    handleUpdateStaffAssignment(slot.id, assignment.id, 'user_name', fullName);
+                                  }}
+                                  placeholder="Search for user..."
                                   disabled={isSubmitting}
-                                >
-                                  <SelectTrigger className="w-32 bg-white">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="Requested">Requested</SelectItem>
-                                    <SelectItem value="Confirmed">Confirmed</SelectItem>
-                                    <SelectItem value="Declined">Declined</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <Select
-                                  value={assignment.compensation_type}
-                                  onValueChange={(value) => handleUpdateStaffAssignment(slot.id, assignment.id, 'compensation_type', value)}
-                                  disabled={isSubmitting}
-                                >
-                                  <SelectTrigger className="w-24 bg-white">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="rate">Rate</SelectItem>
-                                    <SelectItem value="fee">Fee</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <div className="relative w-24">
-                                  <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
-                                    $
-                                  </span>
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    value={assignment.amount}
-                                    onChange={(e) => handleUpdateStaffAssignment(slot.id, assignment.id, 'amount', e.target.value)}
-                                    placeholder="0.00"
-                                    disabled={isSubmitting}
-                                    className="pl-5 bg-white"
-                                  />
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleOpenAssignmentNotes(slot.id, assignment.id)}
-                                  disabled={isSubmitting}
-                                >
-                                  <FileText className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleRemoveStaffAssignment(slot.id, assignment.id)}
-                                  disabled={isSubmitting}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                                  value={assignment.user_name}
+                                  organizationIds={participants.map(p => p.organization_id).filter(id => id && id.trim() !== '')}
+                                />
                               </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500 mb-3">No assignments yet</p>
-                        )}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleAddStaffAssignment(slot.id)}
-                          disabled={isSubmitting}
-                        >
-                          <Plus className="w-4 h-4 mr-1" />
-                          Add Assignment
-                        </Button>
+                              <Select
+                                value={assignment.status}
+                                onValueChange={(value) => handleUpdateStaffAssignment(slot.id, assignment.id, 'status', value)}
+                                disabled={isSubmitting}
+                              >
+                                <SelectTrigger className="w-32 bg-white">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Requested">Requested</SelectItem>
+                                  <SelectItem value="Confirmed">Confirmed</SelectItem>
+                                  <SelectItem value="Declined">Declined</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Select
+                                value={assignment.compensation_type}
+                                onValueChange={(value) => handleUpdateStaffAssignment(slot.id, assignment.id, 'compensation_type', value)}
+                                disabled={isSubmitting}
+                              >
+                                <SelectTrigger className="w-24 bg-white">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="rate">Rate</SelectItem>
+                                  <SelectItem value="fee">Fee</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <div className="relative w-24">
+                                <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
+                                  $
+                                </span>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={assignment.amount}
+                                  onChange={(e) => handleUpdateStaffAssignment(slot.id, assignment.id, 'amount', e.target.value)}
+                                  placeholder="0.00"
+                                  disabled={isSubmitting}
+                                  className="pl-5 bg-white"
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenAssignmentNotes(slot.id, assignment.id)}
+                                disabled={isSubmitting}
+                              >
+                                <FileText className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ))}
-                  
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddStaffSlot}
-                  disabled={isSubmitting}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Staff Slot
-                </Button>
                 </div>
               </div>
             </Card>
 
             {/* Bids & Financial Information */}
             <Card className="p-6 sm:p-8 mb-6">
-              <div className="flex items-center gap-2 mb-6">
-                <DollarSign className="w-5 h-5 text-gray-600" />
-                <h3 className="text-gray-900">Bids & Financial Information</h3>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-gray-600" />
+                  <h3 className="text-gray-900">Bids & Financial Information</h3>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddBid}
+                  disabled={isSubmitting}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Bid
+                </Button>
               </div>
 
               <div className="space-y-6">
@@ -1544,17 +1580,6 @@ export default function CreateGigScreen({
                     {bids.length === 0 && (
                       <p className="text-sm text-gray-500">No bids yet</p>
                     )}
-                    
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAddBid}
-                      disabled={isSubmitting}
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add Bid
-                    </Button>
                   </div>
                 </div>
 
@@ -1588,9 +1613,28 @@ export default function CreateGigScreen({
 
             {/* Equipment */}
             <Card className="p-6 sm:p-8 mb-6">
-              <div className="flex items-center gap-2 mb-6">
-                <Package className="w-5 h-5 text-gray-600" />
-                <h3 className="text-gray-900">Equipment</h3>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-gray-600" />
+                  <h3 className="text-gray-900">Equipment</h3>
+                </div>
+                <Select
+                  onValueChange={handleAssignKit}
+                  disabled={isSubmitting || availableKits.length === 0}
+                >
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="Select kit to assign..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableKits
+                      .filter(kit => !kitAssignments.some(a => a.kit_id === kit.id))
+                      .map((kit) => (
+                        <SelectItem key={kit.id} value={kit.id}>
+                          {kit.name} {kit.tag_number && `(${kit.tag_number})`}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-4">
@@ -1649,30 +1693,10 @@ export default function CreateGigScreen({
                 ) : (
                   <p className="text-sm text-gray-500">No equipment assigned yet</p>
                 )}
-
-                {/* Add Kit */}
-                <div className="flex items-center gap-2">
-                  <Select
-                    onValueChange={handleAssignKit}
-                    disabled={isSubmitting || availableKits.length === 0}
-                  >
-                    <SelectTrigger className="w-64">
-                      <SelectValue placeholder="Select kit to assign..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableKits
-                        .filter(kit => !kitAssignments.some(a => a.kit_id === kit.id))
-                        .map((kit) => (
-                          <SelectItem key={kit.id} value={kit.id}>
-                            {kit.name} {kit.tag_number && `(${kit.tag_number})`}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  {availableKits.length === 0 && (
-                    <span className="text-sm text-gray-500">No kits available</span>
-                  )}
-                </div>
+                
+                {availableKits.length === 0 && (
+                  <p className="text-sm text-gray-500">No kits available to assign</p>
+                )}
               </div>
             </Card>
 
