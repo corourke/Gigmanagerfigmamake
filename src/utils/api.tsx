@@ -2281,6 +2281,23 @@ export async function removeKitFromGig(assignmentId: string) {
   return { success: true };
 }
 
+export async function updateGigKitAssignment(assignmentId: string, updates: { notes?: string }) {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('gig_kit_assignments')
+    .update(updates)
+    .eq('id', assignmentId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating kit assignment:', error);
+    throw error;
+  }
+
+  return data;
+}
+
 export async function getGigKits(gigId: string, organizationId?: string) {
   const supabase = getSupabase();
   let query = supabase

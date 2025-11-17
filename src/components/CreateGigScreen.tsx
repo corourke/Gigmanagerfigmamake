@@ -69,7 +69,7 @@ import MarkdownEditor from './MarkdownEditor';
 import type { User, Organization, OrganizationType, UserRole } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { projectId } from '../utils/supabase/info';
-import { getGig, updateGig, createGig, deleteGig, createGigBid, updateGigBid, deleteGigBid, getGigKits, assignKitToGig, removeKitFromGig, getKits } from '../utils/api';
+import { getGig, updateGig, createGig, deleteGig, createGigBid, updateGigBid, deleteGigBid, getGigKits, assignKitToGig, removeKitFromGig, getKits, updateGigStaffSlots, updateGigKitAssignment } from '../utils/api';
 
 type GigStatus = 'DateHold' | 'Proposed' | 'Booked' | 'Completed' | 'Cancelled' | 'Settled';
 
@@ -513,6 +513,7 @@ export default function CreateGigScreen({
     }
   };
 
+  // Save staff slots to database (only in edit mode)
   // Staff Slot Management
   const handleAddStaffSlot = () => {
     const newSlot: StaffSlotData = {
@@ -819,6 +820,48 @@ export default function CreateGigScreen({
         } catch (bidError: any) {
           console.error('Error saving bids:', bidError);
           toast.error('Failed to save bids: ' + (bidError.message || 'Unknown error'));
+        }
+
+        // Save staff slots and assignments
+        try {
+          const slotsData = staffSlots
+            .filter(s => s.role && s.role.trim() !== '')
+            .map(s => ({
+              id: isDbId(s.id) ? s.id : undefined, // Only include DB IDs
+              organization_id: organization.id,
+              role: s.role,
+              count: s.count,
+              notes: s.notes || null,
+              assignments: (s.assignments || [])
+                .filter(a => a.user_id && a.user_id.trim() !== '')
+                .map(a => ({
+                  id: isDbId(a.id) ? a.id : undefined, // Only include DB IDs
+                  user_id: a.user_id,
+                  status: a.status,
+                  rate: a.compensation_type === 'rate' ? (a.amount ? parseFloat(a.amount) : null) : null,
+                  fee: a.compensation_type === 'fee' ? (a.amount ? parseFloat(a.amount) : null) : null,
+                  notes: a.notes || null,
+                })),
+            }));
+
+          console.log('Updating staff slots:', slotsData);
+          await updateGigStaffSlots(gigId, slotsData);
+        } catch (staffError: any) {
+          console.error('Error saving staff slots:', staffError);
+          toast.error('Failed to save staff slots: ' + (staffError.message || 'Unknown error'));
+        }
+
+        // Save kit assignment notes (kits themselves are already saved immediately)
+        try {
+          for (const kitAssignment of kitAssignments) {
+            if (isDbId(kitAssignment.id) && kitAssignment.notes) {
+              console.log('Updating kit assignment notes:', kitAssignment.id, kitAssignment.notes);
+              await updateGigKitAssignment(kitAssignment.id, { notes: kitAssignment.notes });
+            }
+          }
+        } catch (kitError: any) {
+          console.error('Error saving kit assignment notes:', kitError);
+          toast.error('Failed to save kit notes: ' + (kitError.message || 'Unknown error'));
         }
 
         toast.success('Gig updated successfully!');
