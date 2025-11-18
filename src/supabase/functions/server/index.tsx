@@ -1914,6 +1914,181 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ===== Staff Assignment Management =====
+    
+    // Get assignment details
+    const assignmentDetailMatch = path.match(/^\/assignments\/([^\/]+)$/);
+    if (assignmentDetailMatch && method === 'GET') {
+      const assignmentId = assignmentDetailMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Get assignment with gig and slot details
+      const { data: assignment, error } = await supabaseAdmin
+        .from('gig_staff_assignments')
+        .select(`
+          id,
+          status,
+          rate,
+          fee,
+          notes,
+          slot:gig_staff_slots(
+            id,
+            notes,
+            role:staff_roles(name)
+          ),
+          gig:gigs(
+            id,
+            name,
+            client,
+            start,
+            end,
+            venue,
+            address,
+            notes
+          )
+        `)
+        .eq('id', assignmentId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (error || !assignment) {
+        console.error('Error fetching assignment:', error);
+        return new Response(JSON.stringify({ error: 'Assignment not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Format response
+      const response = {
+        id: assignment.id,
+        status: assignment.status,
+        compensation_type: assignment.rate ? 'rate' : 'fee',
+        rate: assignment.rate,
+        fee: assignment.fee,
+        notes: assignment.notes,
+        gig: assignment.gig,
+        slot: {
+          role: assignment.slot?.role?.name || '',
+          notes: assignment.slot?.notes,
+        },
+      };
+
+      return new Response(JSON.stringify(response), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Accept assignment
+    const acceptMatch = path.match(/^\/assignments\/([^\/]+)\/accept$/);
+    if (acceptMatch && method === 'POST') {
+      const assignmentId = acceptMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Verify assignment belongs to user
+      const { data: assignment } = await supabaseAdmin
+        .from('gig_staff_assignments')
+        .select('user_id')
+        .eq('id', assignmentId)
+        .single();
+
+      if (!assignment || assignment.user_id !== user.id) {
+        return new Response(JSON.stringify({ error: 'Assignment not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update status to Confirmed
+      const { data, error } = await supabaseAdmin
+        .from('gig_staff_assignments')
+        .update({ status: 'Confirmed' })
+        .eq('id', assignmentId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error accepting assignment:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // TODO: Send notification to gig manager
+
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Decline assignment
+    const declineMatch = path.match(/^\/assignments\/([^\/]+)\/decline$/);
+    if (declineMatch && method === 'POST') {
+      const assignmentId = declineMatch[1];
+      const authHeader = req.headers.get('Authorization');
+      const { user, error: authError } = await getAuthenticatedUser(authHeader);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: authError ?? 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Verify assignment belongs to user
+      const { data: assignment } = await supabaseAdmin
+        .from('gig_staff_assignments')
+        .select('user_id')
+        .eq('id', assignmentId)
+        .single();
+
+      if (!assignment || assignment.user_id !== user.id) {
+        return new Response(JSON.stringify({ error: 'Assignment not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update status to Declined
+      const { data, error } = await supabaseAdmin
+        .from('gig_staff_assignments')
+        .update({ status: 'Declined' })
+        .eq('id', assignmentId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error declining assignment:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // TODO: Send notification to gig manager
+
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // 404 - Route not found
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,

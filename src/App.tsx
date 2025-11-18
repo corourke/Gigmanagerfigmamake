@@ -14,6 +14,7 @@ import CreateAssetScreen from './components/CreateAssetScreen';
 import KitListScreen from './components/KitListScreen';
 import CreateKitScreen from './components/CreateKitScreen';
 import KitDetailScreen from './components/KitDetailScreen';
+import AssignmentDetailScreen from './components/AssignmentDetailScreen';
 import EditUserProfileDialog from './components/EditUserProfileDialog';
 import { Toaster } from './components/ui/sonner';
 import { createClient } from './utils/supabase/client';
